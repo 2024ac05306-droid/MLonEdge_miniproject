@@ -21,6 +21,7 @@ This tool stack aligns with the assignment components, including Edge AI model d
 |Git | version control|
 |Git Hub Actions | CI/CD |
 |VS code|Model Development|
+|Source tree|Visual Git flow|
 |Python |Programming Language Python3.11|
 |Pandas and numpy |Data Processing and Feature Enginerring|
 |Matplotlib |Exploratory Data Analysis (EDA) and result visualization|
