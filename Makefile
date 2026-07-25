@@ -5,8 +5,8 @@ help:
 	@echo "===================================="
 	@echo "make install          - Install dependencies (pip)"
 	@echo "make lint             - Run Ruff lint checks"
-	@echo "make test             - Run unit tests"
-	@echo "make eda              - Run exploratory data analysis"
+	@echo "make model_test       - Run unit tests"
+	@echo "make data_pipeline    - Run data pipeline"
 	@echo "make preprocess       - Run data preprocessing"
 	@echo "make train            - Run model training locally"
 	@echo "make inference        - Run model inference on test data"
@@ -31,12 +31,14 @@ lint:
 	ruff check src tests
 
 # Run unit tests
-test:
+model_test:
 	pytest
 
-# Run EDA analysis
-eda:
-	python src/EDA_analysis.py
+# data_pipeline
+data_pipeline:
+	python src/simulator.py
+	python src/preprocessing.py
+	python src/training_stats.npy
 
 # Data preprocessing
 preprocess:
@@ -44,11 +46,22 @@ preprocess:
 
 # Model training
 train:
-	python src/model_train.py
+	python src/train_model.py
+	python src/generate_dataset.py
+	python src/prune_quantise.py
+	python src/convert_ptq.py
 
 # Model Inference
 inference:
-	python src/inference.py
+	python src/inference_service.py
+
+# Model Monitoring
+drift_monitor:
+	python src/drift_monitor.py
+
+# Model optimization
+model_optimization:
+	python src/optimizationbenchmark.py
 
 # Run FastAPI inference service
 serve:
