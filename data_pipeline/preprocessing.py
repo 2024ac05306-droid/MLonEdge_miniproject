@@ -1,12 +1,45 @@
+"""
+Cold Chain Preprocessing Pipeline
+
+Responsibilities:
+- Receive MQTT sensor streams
+- Apply sliding window feature extraction
+- Save extracted features by class
+- Generate training_stats.npy from Normal class only
+
+Feature vector:
+[
+ temperature_mean,
+ temperature_std,
+ temperature_rate_of_change,
+ vibration_rms,
+ vibration_peak,
+ vibration_kurtosis
+]
+"""
+
+
 import json
 import os
+import sys
 from collections import deque
 
 import mlflow
 import numpy as np
+
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 from scipy.stats import kurtosis
+
+from dotenv import load_dotenv
+
+PROJECT_ROOT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..")
+)
+
+sys.path.insert(0, PROJECT_ROOT)
+
+from src.feature_extractor import FeatureExtractor
 
 # -----------------------------------------------------
 # Configuration
@@ -17,10 +50,10 @@ load_dotenv()
 BROKER = os.getenv("MQTT_BROKER", "localhost")
 PORT = int(os.getenv("MQTT_PORT", 1883))
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "./mlruns")
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
 MLFLOW_EXPERIMENT_NAME = os.getenv(
     "MLFLOW_EXPERIMENT_NAME",
-    "ColdChain_Preprocessing"
+    "G44_logibridge_miniproject"
 )
 
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
@@ -28,6 +61,7 @@ mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
 TEMPERATURE_TOPIC = "coldchain/truck/temperature"
 VIBRATION_TOPIC = "coldchain/truck/vibration_rms"
+DOOR_EVENT_TOPIC = "coldchain/truck/door_event"
 
 # -----------------------------------------------------
 # Sliding Window Parameters
