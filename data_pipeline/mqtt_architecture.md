@@ -2,9 +2,12 @@
 Message Queue Telemetry Transport Protocol (MQTT)
 
 MQTT is a simple, lightweight messaging protocol used to establish communication between multiple devices. 
+
 It is a TCP-based protocol (message based protocol) relying on the **publish-subscribe model.** 
 The key component in MQTT is the **MQTT broker**. 
+
 The main task of MQTT broker is dispatching messages to the clients (“subscribers”). 
+
 In other words, it receives messages from publisher and dispatches these messages to the subscribers. 
 While it dispatches messages, the MQTT broker uses the **topic to filter the clients** that will receive the message. 
 The topic is a string and it is possible to combine the topics creating topic levels.
@@ -111,6 +114,8 @@ Step 5: Run your simulator
 python simulator.py --anomaly none
 ```
 
+ <img width="707" height="273" alt="image" src="https://github.com/user-attachments/assets/71a79f3a-7e71-47cf-899d-496aa42b4349" />
+
 ## Quality of Service (QoS)
 
 Quality of Service (QoS) in MQTT messaging is an agreement between sender and receiver on the guarantee of delivering a message.
@@ -125,3 +130,7 @@ There are three levels of QoS:
 1. Tempearture
 2. vibration
 3. Door event
+
+
+  
+
