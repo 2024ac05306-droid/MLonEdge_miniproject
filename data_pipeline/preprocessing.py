@@ -3,11 +3,12 @@ Cold Chain Preprocessing Pipeline
 
 Responsibilities:
 - Receive MQTT sensor streams
-- Apply sliding window feature extraction
+- Apply 5-sample moving average filtering
+- Apply 30-second sliding window
+- Extract six features
 - Save extracted features by class
-- Generate training_stats.npy from Normal class only
-
 Feature vector:
+
 [
  temperature_mean,
  temperature_std,
@@ -23,23 +24,36 @@ import json
 import os
 import sys
 from collections import deque
+from pathlib import Path
+
 
 import mlflow
 import numpy as np
+import pandas as pd
 
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 from scipy.stats import kurtosis
 
-from dotenv import load_dotenv
+
+
+# -----------------------------------------------------
+# Project Path
+# -----------------------------------------------------
 
 PROJECT_ROOT = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..")
+    os.path.join(
+        os.path.dirname(__file__),
+        ".."
+    )
 )
 
-sys.path.insert(0, PROJECT_ROOT)
+sys.path.insert(
+    0,
+    PROJECT_ROOT
+)
 
-from src.feature_extractor import FeatureExtractor
+
 
 # -----------------------------------------------------
 # Configuration
@@ -47,62 +61,141 @@ from src.feature_extractor import FeatureExtractor
 
 load_dotenv()
 
-BROKER = os.getenv("MQTT_BROKER", "localhost")
-PORT = int(os.getenv("MQTT_PORT", 1883))
 
-MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:5000")
+BROKER = os.getenv(
+    "MQTT_BROKER",
+    "localhost"
+)
+
+
+PORT = int(
+    os.getenv(
+        "MQTT_PORT",
+        1883
+    )
+)
+
+
+
+# Use local MLflow by default
+
+MLFLOW_TRACKING_URI = os.getenv(
+    "MLFLOW_TRACKING_URI",
+    "file:./mlruns"
+)
+
+
 MLFLOW_EXPERIMENT_NAME = os.getenv(
     "MLFLOW_EXPERIMENT_NAME",
     "G44_logibridge_miniproject"
 )
 
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+print(os.getenv("MLFLOW_TRACKING_URI"))
+print(os.getenv("MLFLOW_EXPERIMENT_NAME"))
 
-TEMPERATURE_TOPIC = "coldchain/truck/temperature"
-VIBRATION_TOPIC = "coldchain/truck/vibration_rms"
-DOOR_EVENT_TOPIC = "coldchain/truck/door_event"
+
+
+# -----------------------------------------------------
+# MQTT Topics
+# -----------------------------------------------------
+
+TEMPERATURE_TOPIC = (
+    "coldchain/truck/temperature"
+)
+
+VIBRATION_TOPIC = (
+    "coldchain/truck/vibration_rms"
+)
+
+
+DOOR_EVENT_TOPIC = (
+    "coldchain/truck/door_event"
+)
+
+
 
 # -----------------------------------------------------
 # Sliding Window Parameters
 # -----------------------------------------------------
 
-TEMP_SAMPLING_RATE = 1          # Hz
-VIB_SAMPLING_RATE = 0.5         # Hz
+TEMP_SAMPLING_RATE = 1
+
+VIB_SAMPLING_RATE = 0.5
+
 
 WINDOW_SECONDS = 30
+
 STEP_SECONDS = 10
 
-TEMP_WINDOW = WINDOW_SECONDS * TEMP_SAMPLING_RATE      # 30 samples
-TEMP_STEP = STEP_SECONDS * TEMP_SAMPLING_RATE          # 10 samples
 
-VIB_WINDOW = int(WINDOW_SECONDS * VIB_SAMPLING_RATE)   # 15 samples
-VIB_STEP = int(STEP_SECONDS * VIB_SAMPLING_RATE)       # 5 samples
 
-TRAINING_DURATION = 600         # 10 minutes
+TEMP_WINDOW = (
+    WINDOW_SECONDS
+    *
+    TEMP_SAMPLING_RATE
+)
+
+
+TEMP_STEP = (
+    STEP_SECONDS
+    *
+    TEMP_SAMPLING_RATE
+)
+
+
+
+VIB_WINDOW = int(
+    WINDOW_SECONDS
+    *
+    VIB_SAMPLING_RATE
+)
+
+
+VIB_STEP = int(
+    STEP_SECONDS
+    *
+    VIB_SAMPLING_RATE
+)
+
+
 
 # -----------------------------------------------------
 # Buffers
 # -----------------------------------------------------
 
-temperature_buffer = deque(maxlen=TEMP_WINDOW)
-vibration_buffer = deque(maxlen=VIB_WINDOW)
+temperature_buffer = deque(
+    maxlen=TEMP_WINDOW
+)
 
-temperature_history = []
-vibration_history = []
+
+vibration_buffer = deque(
+    maxlen=VIB_WINDOW
+)
+
 
 feature_vectors = []
+
+
 
 # -----------------------------------------------------
 # Signal Processing
 # -----------------------------------------------------
 
 
-def moving_average(signal, window=5):
-    signal = np.asarray(signal)
+def moving_average(
+    signal,
+    window=5
+):
+
+    signal = np.asarray(
+        signal,
+        dtype=np.float32
+    )
+
 
     if len(signal) < window:
         return signal
+
 
     return np.convolve(
         signal,
@@ -111,24 +204,59 @@ def moving_average(signal, window=5):
     )
 
 
-def extract_features(temp_signal, vib_signal):
 
-    temp_signal = moving_average(temp_signal)
-    vib_signal = moving_average(vib_signal)
+def extract_features(
+    temp_signal,
+    vib_signal
+):
 
-    temp_mean = np.mean(temp_signal)
+    temp_signal = moving_average(
+        temp_signal
+    )
 
-    temp_std = np.std(temp_signal)
 
-    duration_min = WINDOW_SECONDS / 60
+    vib_signal = moving_average(
+        vib_signal
+    )
+
+
+
+    temp_mean = np.mean(
+        temp_signal
+    )
+
+
+    temp_std = np.std(
+        temp_signal
+    )
+
+
+    duration_min = (
+        WINDOW_SECONDS / 60
+    )
+
 
     temp_rate = (
-        temp_signal[-1] - temp_signal[0]
+        temp_signal[-1]
+        -
+        temp_signal[0]
     ) / duration_min
 
-    vibration_rms = np.sqrt(np.mean(vib_signal ** 2))
 
-    vibration_peak = np.max(np.abs(vib_signal))
+
+    vibration_rms = np.sqrt(
+        np.mean(
+            vib_signal ** 2
+        )
+    )
+
+
+
+    vibration_peak = np.max(
+        np.abs(vib_signal)
+    )
+
+
 
     vibration_kurtosis = kurtosis(
         vib_signal,
@@ -136,14 +264,27 @@ def extract_features(temp_signal, vib_signal):
         bias=False
     )
 
-    return np.array([
-        temp_mean,
-        temp_std,
-        temp_rate,
-        vibration_rms,
-        vibration_peak,
+
+    if np.isnan(
         vibration_kurtosis
-    ])
+    ):
+
+        vibration_kurtosis = 0.0
+
+
+
+    return np.array(
+        [
+            temp_mean,
+            temp_std,
+            temp_rate,
+            vibration_rms,
+            vibration_peak,
+            vibration_kurtosis
+        ],
+        dtype=np.float32
+    )
+
 
 
 # -----------------------------------------------------
@@ -152,135 +293,212 @@ def extract_features(temp_signal, vib_signal):
 
 def save_training_statistics():
 
-    features = np.asarray(feature_vectors)
+    features = np.asarray(
+        feature_vectors
+    )
 
-    mean = np.mean(features, axis=0)
 
-    std = np.std(features, axis=0)
+    mean = np.mean(
+        features,
+        axis=0
+    )
 
-    std[std == 0] = 1e-8
+
+    std = np.std(
+        features,
+        axis=0
+    )
+
+
+    std[
+        std == 0
+    ] = 1e-8
+
+
+
+    Path("outputs").mkdir(
+        exist_ok=True
+    )
+
+
 
     np.save(
-        "training_stats.npy",
+        "outputs/training_stats.npy",
         {
             "mean": mean,
             "std": std
         }
     )
 
-    print("\nTraining statistics saved.")
-    print("File : training_stats.npy")
 
-    with mlflow.start_run(run_name="Training_Statistics"):
+    print(
+        "Training statistics saved"
+    )
 
-        mlflow.log_param("window_seconds", WINDOW_SECONDS)
-        mlflow.log_param("step_seconds", STEP_SECONDS)
-        mlflow.log_param("moving_average", 5)
-
-        mlflow.log_metric(
-            "feature_vectors",
-            len(features)
-        )
-
-        for i, value in enumerate(mean):
-            mlflow.log_metric(
-                f"mean_feature_{i}",
-                float(value)
-            )
-
-        for i, value in enumerate(std):
-            mlflow.log_metric(
-                f"std_feature_{i}",
-                float(value)
-            )
-
-        mlflow.log_artifact("training_stats.npy")
 
 
 # -----------------------------------------------------
-# MQTT Callback
+# Offline Feature Extraction
 # -----------------------------------------------------
 
-temp_counter = 0
-vib_counter = 0
+
+def create_features(
+    input_file,
+    output_file
+):
 
 
-def on_message(client, userdata, msg):
+    df = pd.read_csv(
+        input_file
+    )
 
-    global temp_counter
-    global vib_counter
 
-    payload = json.loads(msg.payload.decode())
 
-    if payload["sensor"] == "temperature":
+    temperature = (
+        df[
+            df["sensor"]
+            ==
+            "temperature"
+        ]
+        ["value_c"]
+        .values
+    )
 
-        value = payload["value_c"]
 
-        temperature_buffer.append(value)
-        temperature_history.append(value)
 
-        temp_counter += 1
+    vibration = (
+        df[
+            df["sensor"]
+            ==
+            "vibration_rms"
+        ]
+        ["value_g"]
+        .values
+    )
 
-    elif payload["sensor"] == "vibration_rms":
 
-        value = payload["value_g"]
 
-        vibration_buffer.append(value)
-        vibration_history.append(value)
+    feature_rows = []
 
-        vib_counter += 1
 
-    if (
-        len(temperature_buffer) == TEMP_WINDOW
-        and
-        len(vibration_buffer) == VIB_WINDOW
+
+    for start in range(
+        0,
+        len(temperature)-TEMP_WINDOW+1,
+        TEMP_STEP
     ):
 
-        feature = extract_features(
-            np.array(temperature_buffer),
-            np.array(vibration_buffer)
+
+        temp_window = temperature[
+            start:
+            start+TEMP_WINDOW
+        ]
+
+
+
+        vib_start = (
+            start // 2
         )
 
-        feature_vectors.append(feature)
 
-        print(
-            f"Feature Vector {len(feature_vectors)} :",
-            feature.round(3)
+
+        vib_window = vibration[
+            vib_start:
+            vib_start+VIB_WINDOW
+        ]
+
+
+
+        if len(vib_window) < VIB_WINDOW:
+            continue
+
+
+
+        feature_rows.append(
+            extract_features(
+                temp_window,
+                vib_window
+            )
         )
 
-        for _ in range(TEMP_STEP):
-            if temperature_buffer:
-                temperature_buffer.popleft()
 
-        for _ in range(VIB_STEP):
-            if vibration_buffer:
-                vibration_buffer.popleft()
 
-    if len(temperature_history) >= TRAINING_DURATION:
+    columns = [
 
-        save_training_statistics()
+        "temp_mean",
 
-        print("Training completed.")
+        "temp_std",
 
-        client.disconnect()
+        "temp_rate",
+
+        "vibration_rms",
+
+        "vibration_peak",
+
+        "vibration_kurtosis"
+
+    ]
+
+
+
+    Path(
+        "data"
+    ).mkdir(
+        exist_ok=True
+    )
+
+
+
+    feature_df = pd.DataFrame(
+        feature_rows,
+        columns=columns
+    )
+
+
+    feature_df.to_csv(
+        output_file,
+        index=False
+    )
+
+
+
+    print(
+        f"Saved {output_file}"
+    )
+
+
+    print(
+        "Shape:",
+        feature_df.shape
+    )
+
 
 
 # -----------------------------------------------------
-# MQTT
+# Main
 # -----------------------------------------------------
 
-client = mqtt.Client(
-    mqtt.CallbackAPIVersion.VERSION2
-)
+if __name__ == "__main__":
 
-client.on_message = on_message
 
-client.connect(BROKER, PORT)
+    create_features(
+        "outputs/sensor_logs_none.csv",
+        "data/normal_features.csv"
+    )
 
-client.subscribe(TEMPERATURE_TOPIC)
 
-client.subscribe(VIBRATION_TOPIC)
+    create_features(
+        "outputs/sensor_logs_temp_drift.csv",
+        "data/warning_features.csv"
+    )
 
-print("\nWaiting for 10 minutes of NORMAL sensor data...\n")
 
-client.loop_forever()
+    create_features(
+        "outputs/sensor_logs_combined.csv",
+        "data/critical_features.csv"
+    )
+
+
+    print(
+        "\nFeature extraction completed"
+    )
