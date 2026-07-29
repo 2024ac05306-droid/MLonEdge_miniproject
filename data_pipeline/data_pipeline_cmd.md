@@ -18,11 +18,11 @@ copy outputs\sensor_logs.csv outputs\sensor_logs_combined.csv
 
 python data_pipeline\preprocessing.py
 
-python src\normalization.py
+python data_pipeline\normalization.py
 
-python generate_dataset.py
+python training\generate_dataset.py
 
-python train_model.py
+python training\train_model.py
 ```
 
 

@@ -7,28 +7,39 @@ channels:
 dependencies:
   - python=3.11
   - pip
-  - numpy
-  - pandas
-  - scikit-learn
-  - matplotlib
 
   - pip:
-      - numpy==2.3.1
-      - pandas==2.3.1
+      - numpy==1.26.4
+      - pandas==2.3.0
+      - scikit-learn==1.7.0
+      - matplotlib==3.10.3
+
       - jupyter==1.1.1
-      - scikit-learn==1.7.1
-      - matplotlib==3.10.5
-      - mlflow==3.2.0
-      - tensorflow==2.20.0
+
+      # Experiment tracking
+      - mlflow==3.1.0
+
+      # Deep learning
+      - tensorflow==2.19.0
       - tensorflow-model-optimization==0.8.0
+
+      # API serving
       - fastapi==0.116.1
       - uvicorn[standard]==0.35.0
+
+      # MQTT
       - paho-mqtt==2.1.0
+
+      # Utilities
       - psutil==7.0.0
       - joblib==1.5.1
+
+      # Configuration
       - pydantic==2.11.7
-      - pydantic-settings ==2.11.0
+      - pydantic-settings==2.10.1
       - python-dotenv==1.1.0
       - PyYAML==6.0.2
+
+      # Testing / linting
       - pytest==8.4.1
       - ruff==0.12.1
