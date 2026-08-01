@@ -32,3 +32,60 @@ This tool stack aligns with the assignment components, including Edge AI model d
 |Ansible |Automated model deployment and OTA updates|
 |FastAPI: API Framework |REST API for model inference|
 |Pytest |Unit and integration testing|
+
+
+## Project flow 
+                MQTT Sensor Simulation
+                         │
+                         ▼
+               simulator.py
+                         │
+        Generates sensor logs (.csv)
+                         │
+                         ▼
+                 outputs/
+     ├── sensor_logs_none.csv
+     ├── sensor_logs_temp_drift.csv
+     └── sensor_logs_combined.csv
+                         │
+                         ▼
+              preprocessing.py
+                         │
+        Sliding Window (30 s)
+        Moving Average Filter
+        Feature Extraction
+                         │
+                         ▼
+                   data/
+     ├── normal_features.csv
+     ├── warning_features.csv
+     └── critical_features.csv
+                         │
+                         ▼
+            generate_dataset.py
+                         │
+     Merge + Label + Shuffle Dataset
+                         │
+                         ▼
+           data/training_dataset.csv
+                         │
+                         ▼
+              normalization.py
+                         │
+      Calculate Mean & Std (Normal Class)
+                         │
+                         ▼
+      data/training_stats.npy
+                         │
+                         ▼
+               train_model.py
+                         │
+     Train → Validate → Save Model
+                         │
+                         ▼
+        outputs/model.pkl (or .joblib)
+                         │
+                         ▼
+             inference.py
+                         │
+     Normalize → Predict → Alarm
