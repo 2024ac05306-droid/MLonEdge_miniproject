@@ -20,130 +20,87 @@ Architecture:
     Dense(3, Softmax)
 """
 
+
+
 import os
 from pathlib import Path
+import sys
 
-from tensorflow import keras
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import mlflow
 import mlflow.tensorflow
-import numpy as np
-import pandas as pd
+from utils import setup_mlflow
 import tensorflow as tf
-
-
+from tensorflow import keras
 import matplotlib.pyplot as plt
+import numpy as np
 
 
-from dotenv import load_dotenv
-from sklearn.model_selection import train_test_split
+from config import (
+    MODEL_FILE,
+    TRAINING_EPOCHS,
+    BATCH_SIZE,
+    FEATURE_COLUMNS,
+    CLASS_NAMES,
+)
 
+from utils import (
+    setup_mlflow,
+    load_training_dataset,
+    get_features_and_labels,
+    load_training_stats,
+    normalize_features,
+    split_dataset,
+    save_keras_model,
+    log_params,
+    log_metrics,
+    log_artifact,
+    print_dataset_info,
+    print_model_results,
+)
 
 # =====================================================
 # Environment
 # =====================================================
 
-load_dotenv()
-
-MLFLOW_TRACKING_URI = os.getenv(
-    "MLFLOW_TRACKING_URI",
-    "./mlruns"
-)
-
-MLFLOW_EXPERIMENT_NAME = (
-    "ColdChain_Model_Training"
-)
-
-mlflow.set_tracking_uri(
-    MLFLOW_TRACKING_URI
-)
-
-mlflow.set_experiment(
-    MLFLOW_EXPERIMENT_NAME
-)
-
-
-# =====================================================
-# Paths
-# =====================================================
-
-DATA_DIR = Path("data")
-
-MODEL_DIR = Path("models")
-MODEL_DIR.mkdir(exist_ok=True)
-
-DATASET_FILE = (
-    DATA_DIR /
-    "training_dataset.csv"
-)
-
-STATS_FILE = (
-    DATA_DIR /
-    "training_stats.npy"
-)
-
-MODEL_FILE = (
-    MODEL_DIR /
-    "best_model.keras"
-)
-
-
-FEATURE_COLUMNS = [
-
-    "temp_mean",
-    "temp_std",
-    "temp_rate",
-    "vibration_rms",
-    "vibration_peak",
-    "vibration_kurtosis"
-
-]
+setup_mlflow()
 
 
 # =====================================================
 # Load Dataset
 # =====================================================
 
-df = pd.read_csv(DATASET_FILE)
-
-X = df[FEATURE_COLUMNS].values.astype(np.float32)
-
-y = df["label"].values.astype(np.int32)
+df = load_training_dataset()
+print_dataset_info(df)
+X, y = get_features_and_labels(df)
 
 
 # =====================================================
 # Load Saved Statistics
+# IMPORTANT: never recompute statistics from training data.
+# Always use training_stats.npy.
 # =====================================================
 
-stats = np.load(
-    STATS_FILE,
-    allow_pickle=True
-).item()
+mean, std = load_training_stats()
 
-mean = stats["mean"]
-std = stats["std"]
-
-# IMPORTANT:
-# Never recompute statistics from training data.
-# Always use training_stats.npy.
-
-X = (X - mean) / std
+X = normalize_features(
+    X,
+    mean,
+    std
+)
 
 
 # =====================================================
 # Train / Validation Split
 # =====================================================
 
-X_train, X_valid, y_train, y_valid = train_test_split(
-
+X_train, X_valid, y_train, y_valid = split_dataset(
     X,
-    y,
-
-    test_size=0.20,
-
-    random_state=42,
-
-    stratify=y
-
+    y
 )
 
 
@@ -222,6 +179,9 @@ early_stop = tf.keras.callbacks.EarlyStopping(
 # Train
 # =====================================================
 
+TRAINING_EPOCHS = int(os.getenv("TRAINING_EPOCHS", 100))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", 32))
+
 history = model.fit(
 
     X_train,
@@ -233,9 +193,9 @@ history = model.fit(
         y_valid
     ),
 
-    epochs=100,
+    epochs=TRAINING_EPOCHS,
 
-    batch_size=16,
+    batch_size=BATCH_SIZE,
 
     callbacks=[
         early_stop
@@ -282,11 +242,7 @@ print(
     classification_report(
         y_valid,
         y_pred,
-        target_names=[
-            "Normal",
-            "Warning",
-            "Critical",
-        ]
+        target_names=CLASS_NAMES
     )
 )
 
@@ -310,7 +266,8 @@ if accuracy < 0.88:
 # Save Model
 # =====================================================
 
-model.save(
+save_keras_model(
+    model,
     MODEL_FILE
 )
 
@@ -322,6 +279,8 @@ print(
 # =====================================================
 # Confusion Matrix
 # =====================================================
+OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "./outputs"))
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 cm = confusion_matrix(
     y_valid,
@@ -329,15 +288,8 @@ cm = confusion_matrix(
 )
 
 disp = ConfusionMatrixDisplay(
-
     confusion_matrix=cm,
-
-    display_labels=[
-        "Normal",
-        "Warning",
-        "Critical",
-    ]
-
+    display_labels=CLASS_NAMES
 )
 
 fig, ax = plt.subplots(figsize=(6, 6))
@@ -350,13 +302,17 @@ disp.plot(
 
 plt.tight_layout()
 
-CONFUSION_MATRIX = (
-    MODEL_DIR /
-    "confusion_matrix.png"
-)
+
+CONFUSION_MATRIX = OUTPUT_DIR / "confusion_matrix.png"
+TRAINING_CURVE = OUTPUT_DIR / "training_curve.png"
 
 plt.savefig(
     CONFUSION_MATRIX,
+    dpi=300
+)
+
+plt.savefig(
+    TRAINING_CURVE,
     dpi=300
 )
 
@@ -374,102 +330,38 @@ with mlflow.start_run(
     # -------------------------
     # Parameters
     # -------------------------
+    log_params({
 
-    mlflow.log_param(
-        "input_features",
-        6
-    )
-
-    mlflow.log_param(
-        "hidden_layer_1",
-        32
-    )
-
-    mlflow.log_param(
-        "hidden_layer_2",
-        16
-    )
-
-    mlflow.log_param(
-        "activation",
-        "ReLU"
-    )
-
-    mlflow.log_param(
-        "output_classes",
-        3
-    )
-
-    mlflow.log_param(
-        "optimizer",
-        "Adam"
-    )
-
-    mlflow.log_param(
-        "learning_rate",
-        0.001
-    )
-
-    mlflow.log_param(
-        "batch_size",
-        16
-    )
-
-    mlflow.log_param(
-        "epochs_requested",
-        100
-    )
-
-    mlflow.log_param(
-        "early_stopping",
-        True
-    )
+    "input_features": len(FEATURE_COLUMNS),
+    "hidden_layer_1": 32,
+    "hidden_layer_2": 16,
+    "activation": "ReLU",
+    "learning_rate": 0.001,
+    "training_epochs": TRAINING_EPOCHS,
+    "loss_function": "sparse_categorical_crossentropy",
+    "optimizer": "Adam",
+    "batch_size": BATCH_SIZE,
+    "training_epochs": TRAINING_EPOCHS,
+     })
 
     # -------------------------
     # Metrics
     # -------------------------
 
-    mlflow.log_metric(
-        "validation_accuracy",
-        float(accuracy)
-    )
+    log_metrics({
 
-    mlflow.log_metric(
-        "best_validation_loss",
-        float(
-            min(history.history["val_loss"])
-        )
-    )
-
-    mlflow.log_metric(
-        "best_training_loss",
-        float(
-            min(history.history["loss"])
-        )
-    )
-
-    mlflow.log_metric(
-        "epochs_trained",
-        len(history.history["loss"])
-    )
+    "validation_accuracy": accuracy,
+    "best_validation_loss": min(history.history["val_loss"]),
+    "best_training_loss": min(history.history["loss"]),
+    "epochs_trained": len(history.history["loss"])
+    })
 
     # -------------------------
     # Artifacts
     # -------------------------
 
-    mlflow.log_artifact(
-        str(CONFUSION_MATRIX)
-    )
-
-    mlflow.log_artifact(
-        str(MODEL_FILE)
-    )
-
-    # TensorFlow model
-    mlflow.tensorflow.log_model(
-        model=model,
-        artifact_path="model"
-    )
+    log_artifact(CONFUSION_MATRIX)
+    log_artifact(MODEL_FILE)
 
 print("\nTraining completed successfully.")
 print("Validation Accuracy : {:.2f}%".format(
