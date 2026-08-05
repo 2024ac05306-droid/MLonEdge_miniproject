@@ -20,7 +20,8 @@ dependencies:
       - mlflow==3.1.0
 
       # Deep learning
-      - tensorflow==2.19.0
+      - tensorflow==2.16.2
+      - keras==3.3.3
       - tensorflow-model-optimization==0.8.0
 
       # API serving

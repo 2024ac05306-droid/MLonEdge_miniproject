@@ -129,19 +129,33 @@ def split_dataset(X, y):
 # Model
 # ---------------------------------------------------------
 
+from pathlib import Path
+import tensorflow as tf
+
 def load_keras_model(model_path):
     """
-    Load TensorFlow/Keras model.
+    Load a TensorFlow/Keras model.
     """
 
     model_path = Path(model_path)
 
     if not model_path.exists():
         raise FileNotFoundError(
-            f"Model not found : {model_path}"
+            f"Model not found: {model_path}"
         )
 
-    return tf.keras.models.load_model(model_path)
+    try:
+        return tf.keras.models.load_model(
+            model_path,
+            compile=False
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Failed to load model '{model_path}'. "
+            "This usually indicates that the model was saved with a different "
+            "TensorFlow/Keras version than the current environment.\n"
+            f"Original error: {e}"
+        ) from e
 
 
 def save_keras_model(model, model_path):

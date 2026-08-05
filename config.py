@@ -9,6 +9,20 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def resolve_path(path_value: str | os.PathLike[str], default: str) -> Path:
+    """Resolve paths relative to the project root when they are not absolute."""
+
+    candidate = Path(path_value or default)
+
+    if candidate.is_absolute():
+        return candidate
+
+    return (PROJECT_ROOT / candidate).resolve()
+
+
 # --------------------------------------------------------
 # Load .env
 # --------------------------------------------------------
@@ -40,7 +54,10 @@ MLFLOW_EXPERIMENT_NAME = os.getenv(
 # Dataset
 # --------------------------------------------------------
 
-DATASET_DIR = Path(os.getenv("DATASET_DIR", "./data"))
+DATASET_DIR = resolve_path(
+    os.getenv("DATASET_DIR", "./data"),
+    "./data"
+)
 
 DATASET_FILE = DATASET_DIR / os.getenv(
     "DATASET_FILE",
@@ -56,7 +73,10 @@ TRAINING_STATS = DATASET_DIR / os.getenv(
 # Models
 # --------------------------------------------------------
 
-MODEL_DIR = Path(os.getenv("MODEL_DIR", "./models"))
+MODEL_DIR = resolve_path(
+    os.getenv("MODEL_DIR", "./models"),
+    "./models"
+)
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_FILE = MODEL_DIR / os.getenv(
@@ -107,12 +127,14 @@ RANDOM_STATE = int(
 # Output Directories
 # --------------------------------------------------------
 
-LOG_DIR = Path(
-    os.getenv("LOG_DIR", "./logs")
+LOG_DIR = resolve_path(
+    os.getenv("LOG_DIR", "./logs"),
+    "./logs"
 )
 
-OUTPUT_DIR = Path(
-    os.getenv("OUTPUT_DIR", "./outputs")
+OUTPUT_DIR = resolve_path(
+    os.getenv("OUTPUT_DIR", "./outputs"),
+    "./outputs"
 )
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)

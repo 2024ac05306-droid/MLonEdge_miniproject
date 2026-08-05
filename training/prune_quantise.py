@@ -8,133 +8,79 @@ and saves the optimized model for deployment.
 
 import os
 from pathlib import Path
+import sys
+import numpy as np 
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import mlflow
-import numpy as np
-import pandas as pd
 import tensorflow as tf
+keras = tf.keras
 import tensorflow_model_optimization as tfmot
 
-from dotenv import load_dotenv
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.models import load_model
+
+from config import (
+    MODEL_FILE,
+    PRUNED_MODEL_FILE,
+    TRAINING_EPOCHS,
+    PRUNING_EPOCHS,
+    BATCH_SIZE,
+)
+
+from utils import (
+    setup_mlflow,
+    load_training_dataset,
+    get_features_and_labels,
+    load_training_stats,
+    normalize_features,
+    split_dataset,
+    save_keras_model,
+    log_params,
+    log_metrics,
+    log_artifact,
+)
+
+# Avoid importing mlflow/tensorflow symbols before the runtime environment
+# has finished initialising in some local shells.
 
 # -------------------------------------------------------------------
 # Load Environment Variables
-# -------------------------------------------------------------------
-
-load_dotenv()
-
-MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
-MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
-
-MLFLOW_TRACKING_URI = os.getenv(
-    "MLFLOW_TRACKING_URI",
-    "sqlite:///mlflow.db"
-)
-
-MLFLOW_EXPERIMENT_NAME = os.getenv(
-    "MLFLOW_EXPERIMENT_NAME",
-    "G44_logibridge_miniproject"
-)
-
-DATASET_DIR = Path(os.getenv("DATASET_DIR", "./data"))
-MODEL_DIR = Path(os.getenv("MODEL_DIR", "./models"))
-
-DATASET_FILE = DATASET_DIR / os.getenv(
-    "DATASET_FILE",
-    "training_dataset.csv"
-)
-
-TRAINING_STATS = DATASET_DIR / os.getenv(
-    "TRAINING_STATS",
-    "training_stats.npy"
-)
-
-MODEL_FILE = MODEL_DIR / os.getenv(
-    "MODEL_NAME",
-    "best_model.keras"
-)
-
-PRUNED_MODEL_FILE = MODEL_DIR / os.getenv(
-    "PRUNED_MODEL_NAME",
-    "best_model_pruned.keras"
-)
-
-TEST_SIZE = float(os.getenv("TEST_SIZE", 0.20))
-RANDOM_STATE = int(os.getenv("RANDOM_STATE", 42))
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", 32))
-EPOCHS = int(os.getenv("EPOCHS", 10))
-
-MODEL_DIR.mkdir(parents=True, exist_ok=True)
-
-# -------------------------------------------------------------------
 # Configure MLflow
 # -------------------------------------------------------------------
 
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+setup_mlflow()
 
 # -------------------------------------------------------------------
 # Load Dataset
 # -------------------------------------------------------------------
 
 print("Loading training dataset...")
-
-df = pd.read_csv(DATASET_FILE)
-
+df = load_training_dataset()
+X, y = get_features_and_labels(df)
 print(f"Dataset Shape : {df.shape}")
-
-
-FEATURE_COLUMNS = [
-
-    # Copy the exact feature list from train_model.py
-
-    "temperature_mean",
-    "temperature_std",
-    "temperature_min",
-    "temperature_max",
-
-    "vibration_mean",
-    "vibration_std",
-    "vibration_min",
-    "vibration_max"
-
-]
-
-TARGET_COLUMN = "label"
-
-X = df[FEATURE_COLUMNS].values.astype(np.float32)
-y = df[TARGET_COLUMN].values.astype(np.int32)
 
 # -------------------------------------------------------------------
 # Load Normalization Statistics
 # -------------------------------------------------------------------
 
 print("Loading normalization statistics...")
-
-stats = np.load(
-    TRAINING_STATS,
-    allow_pickle=True
-).item()
-
-mean = stats["mean"]
-std = stats["std"]
-
-std = np.where(std == 0, 1.0, std)
-
-X = (X - mean) / std
+mean, std = load_training_stats()
+X = normalize_features(
+    X,
+    mean,
+    std
+)
 
 # -------------------------------------------------------------------
 # Split Dataset
 # -------------------------------------------------------------------
 
-X_train, X_valid, y_train, y_valid = train_test_split(
+X_train, X_valid, y_train, y_valid = split_dataset(
     X,
-    y,
-    test_size=TEST_SIZE,
-    random_state=RANDOM_STATE,
-    stratify=y
+    y
 )
 
 print(f"Training Samples   : {len(X_train)}")
@@ -146,7 +92,40 @@ print(f"Validation Samples : {len(X_valid)}")
 
 print("Loading trained MLP model...")
 
-model = load_model(MODEL_FILE)
+model_path = Path(MODEL_FILE).resolve()
+
+if not model_path.exists():
+    raise FileNotFoundError(
+        f"Model file not found: {model_path}"
+    )
+
+try:
+    model = keras.models.load_model(
+        model_path,
+        compile=False
+    )
+
+except Exception as exc:
+    print(f"Primary model load failed: {exc}")
+
+    if model_path.suffix != ".keras":
+        fallback_path = model_path.with_suffix(".keras")
+    else:
+        fallback_path = model_path.with_suffix(".h5")
+
+    if fallback_path.exists():
+        print(f"Trying fallback model load: {fallback_path}")
+
+        model = keras.models.load_model(
+            fallback_path,
+            compile=False
+        )
+
+    else:
+        raise RuntimeError(
+            f"Unable to load model from either "
+            f"'{model_path}' or '{fallback_path}'."
+        ) from exc
 
 model.summary()
 
@@ -170,12 +149,10 @@ print(f"Original Loss     : {original_loss:.4f}")
 # -------------------------------------------------------------------
 
 print("\nApplying magnitude pruning...")
-
 num_train_samples = X_train.shape[0]
-
 end_step = int(
     np.ceil(num_train_samples / BATCH_SIZE)
-) * EPOCHS
+) * TRAINING_EPOCHS
 
 pruning_params = {
     "pruning_schedule":
@@ -197,86 +174,56 @@ pruned_model = tfmot.sparsity.keras.prune_low_magnitude(
 # -------------------------------------------------------------------
 
 pruned_model.compile(
-
-    optimizer=tf.keras.optimizers.Adam(),
-
-    loss=tf.keras.losses.SparseCategoricalCrossentropy(),
-
-    metrics=["accuracy"]
-
-)
+    optimizer=keras.optimizers.Adam(),
+    loss=keras.losses.SparseCategoricalCrossentropy(),
+    metrics=["accuracy"])
 
 # -------------------------------------------------------------------
 # Callbacks
 # -------------------------------------------------------------------
 
 callbacks = [
-
     tfmot.sparsity.keras.UpdatePruningStep(),
-
-    tf.keras.callbacks.EarlyStopping(
-
+     keras.callbacks.EarlyStopping(
         monitor="val_accuracy",
-
         patience=5,
-
         restore_best_weights=True
-
-    )
-
-]
+    )]
 
 # -------------------------------------------------------------------
 # Fine Tune
 # -------------------------------------------------------------------
 
 print("\nFine-tuning pruned model...")
-PRUNING_EPOCHS = int(os.getenv("PRUNING_EPOCHS", 10))
 
-history = pruned_model.fit(
+try:
+    history = pruned_model.fit(
+        X_train,
+        y_train,
+        validation_data=(X_valid, y_valid),
+        batch_size=BATCH_SIZE,
+        epochs=PRUNING_EPOCHS,
+        callbacks=callbacks,
+        verbose=1
+    )
 
-    X_train,
-
-    y_train,
-
-    validation_data=(
-
-        X_valid,
-
-        y_valid
-
-    ),
-
-    batch_size=BATCH_SIZE,
-
-    epochs=PRUNING_EPOCHS,
-
-    callbacks=callbacks,
-
-    verbose=1
-
-)
-
+except Exception as e:
+    raise RuntimeError(
+        f"Error during pruning fine-tuning: {e}"
+    ) from e
 # -------------------------------------------------------------------
 # Evaluate Pruned Model
 # -------------------------------------------------------------------
 
 loss, accuracy = pruned_model.evaluate(
-
     X_valid,
-
     y_valid,
-
     verbose=0
-
 )
 
 print("\nPruned Model Results")
-
 print("----------------------------")
-
 print(f"Accuracy : {accuracy:.4f}")
-
 print(f"Loss     : {loss:.4f}")
 
 # -------------------------------------------------------------------
@@ -284,31 +231,38 @@ print(f"Loss     : {loss:.4f}")
 # -------------------------------------------------------------------
 
 print("\nRemoving pruning wrappers...")
-
 final_model = tfmot.sparsity.keras.strip_pruning(
-
     pruned_model
-
 )
 
 # -------------------------------------------------------------------
 # Save Model
 # -------------------------------------------------------------------
 
-print("\nSaving pruned model...")
-
-final_model.save(
-
+save_keras_model(
+    final_model,
     PRUNED_MODEL_FILE
-
-)
+)  
 
 print(
-
     f"Saved : {PRUNED_MODEL_FILE}"
-
 )
+if final_model is not None:
+    final_model.summary()
+if not Path(PRUNED_MODEL_FILE).exists():
+    raise RuntimeError("Failed to save pruned model.")
 
+# -------------------------------------------------------------------
+# Model Size Comparison
+# -------------------------------------------------------------------
+
+original_size = Path(MODEL_FILE).resolve().stat().st_size / (1024 * 1024)
+pruned_size = Path(PRUNED_MODEL_FILE).resolve().stat().st_size / (1024 * 1024)
+
+print("\nModel Size")
+print("---------------------------")
+print(f"Original : {original_size:.2f} MB")
+print(f"Pruned   : {pruned_size:.2f} MB")
 
 # -------------------------------------------------------------------
 # MLflow Logging
@@ -316,68 +270,30 @@ print(
 
 with mlflow.start_run(run_name="MLP_Model_Pruning"):
 
-    mlflow.log_param("model_type", "MLP")
-    mlflow.log_param("batch_size", BATCH_SIZE)
-    mlflow.log_param("training_epochs", EPOCHS)
-    mlflow.log_param("pruning_epochs", PRUNING_EPOCHS)
+    log_metrics({
+        "original_accuracy": original_accuracy,
+        "pruned_accuracy": accuracy,
+        "accuracy_difference": accuracy - original_accuracy,
+        "original_model_size_mb": original_size,
+        "pruned_model_size_mb": pruned_size,
+    })
 
-    mlflow.log_metric(
-        "original_accuracy",
-        float(original_accuracy)
+    mlflow.keras.log_model(
+        keras_model=final_model,
+        artifact_path="pruned_model"
     )
-
-    mlflow.log_metric(
-        "pruned_accuracy",
-        float(accuracy)
-    )
-
-    mlflow.log_metric(
-        "accuracy_difference",
-        float(accuracy - original_accuracy)
-    )
-
-
-# -------------------------------------------------------------------
-# Model Size Comparison
-# -------------------------------------------------------------------
-
-original_size = MODEL_FILE.stat().st_size / (1024 * 1024)
-pruned_size = PRUNED_MODEL_FILE.stat().st_size / (1024 * 1024)
-
-print("\nModel Size")
-
-print("---------------------------")
-
-print(f"Original : {original_size:.2f} MB")
-
-print(f"Pruned   : {pruned_size:.2f} MB")
-
-mlflow.log_metric(
-    "original_model_size_mb",
-    original_size
-)
-
-mlflow.log_metric(
-    "pruned_model_size_mb",
-    pruned_size
-)
-
-# -------------------------------------------------------------------
-# Log Artifacts
-# -------------------------------------------------------------------
-
-mlflow.log_artifact(
-    str(PRUNED_MODEL_FILE)
-)
-
-mlflow.keras.log_model(
-    final_model,
-    artifact_path="pruned_model"
-)
+    log_params({
+        "pruning_initial_sparsity": 0.30,
+        "pruning_final_sparsity": 0.80,
+        "training_epochs": TRAINING_EPOCHS,
+        "pruning_epochs": PRUNING_EPOCHS,
+        "batch_size": BATCH_SIZE,
+    })
+    log_artifact(MODEL_FILE)
+    log_artifact(PRUNED_MODEL_FILE)
 
 print("\nModel logged to MLflow.")
 
-mlflow.end_run()
 
 # -------------------------------------------------------------------
 # Main
