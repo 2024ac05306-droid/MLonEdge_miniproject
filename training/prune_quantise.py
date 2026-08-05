@@ -11,6 +11,13 @@ from pathlib import Path
 import sys
 import numpy as np 
 
+# Ensure TensorFlow does NOT try to use the legacy tf.keras shim
+# Some local environments set TF_USE_LEGACY_KERAS=True which makes
+# TensorFlow expect the external `tf_keras` package. That causes
+# `tf.keras` to fail to initialize and produces the ImportError seen
+# in CI/local runs. Unset it here before importing TensorFlow.
+os.environ.pop('TF_USE_LEGACY_KERAS', None)
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -309,4 +316,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
