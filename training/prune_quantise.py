@@ -1,22 +1,14 @@
-"""
-prune_quantise.py
-
-Prunes the trained MLP model using TensorFlow Model Optimization Toolkit
-and saves the optimized model for deployment.
-
-"""
-
 import os
 from pathlib import Path
 import sys
-import numpy as np 
 
-# Ensure TensorFlow does NOT try to use the legacy tf.keras shim
-# Some local environments set TF_USE_LEGACY_KERAS=True which makes
-# TensorFlow expect the external `tf_keras` package. That causes
-# `tf.keras` to fail to initialize and produces the ImportError seen
-# in CI/local runs. Unset it here before importing TensorFlow.
-os.environ.pop('TF_USE_LEGACY_KERAS', None)
+# -------------------------------------------------------------------
+# Environment Setup for TFMOT / Keras Compatibility
+# MUST be set before importing tensorflow, keras, or tfmot
+# -------------------------------------------------------------------
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
+import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -25,9 +17,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 import mlflow
 import tensorflow as tf
-keras = tf.keras
+import tf_keras as keras
 import tensorflow_model_optimization as tfmot
-
 
 from config import (
     MODEL_FILE,
@@ -50,11 +41,21 @@ from utils import (
     log_artifact,
 )
 
-# Avoid importing mlflow/tensorflow symbols before the runtime environment
-# has finished initialising in some local shells.
+# -------------------------------------------------------------------
+# Custom Layer to handle Keras 3 -> Legacy Keras deserialization
+# -------------------------------------------------------------------
+class LegacyInputLayer(keras.layers.InputLayer):
+    """
+    Adapter layer to strip/convert Keras 3 'batch_shape' into 
+    Legacy Keras 'batch_input_shape' during deserialization.
+    """
+    def __init__(self, **kwargs):
+        if "batch_shape" in kwargs:
+            kwargs["batch_input_shape"] = kwargs.pop("batch_shape")
+        super().__init__(**kwargs)
+
 
 # -------------------------------------------------------------------
-# Load Environment Variables
 # Configure MLflow
 # -------------------------------------------------------------------
 
@@ -75,20 +76,13 @@ print(f"Dataset Shape : {df.shape}")
 
 print("Loading normalization statistics...")
 mean, std = load_training_stats()
-X = normalize_features(
-    X,
-    mean,
-    std
-)
+X = normalize_features(X, mean, std)
 
 # -------------------------------------------------------------------
 # Split Dataset
 # -------------------------------------------------------------------
 
-X_train, X_valid, y_train, y_valid = split_dataset(
-    X,
-    y
-)
+X_train, X_valid, y_train, y_valid = split_dataset(X, y)
 
 print(f"Training Samples   : {len(X_train)}")
 print(f"Validation Samples : {len(X_valid)}")
@@ -102,36 +96,34 @@ print("Loading trained MLP model...")
 model_path = Path(MODEL_FILE).resolve()
 
 if not model_path.exists():
-    raise FileNotFoundError(
-        f"Model file not found: {model_path}"
-    )
+    raise FileNotFoundError(f"Model file not found: {model_path}")
 
 try:
+    # Pass custom_objects to dynamically map InputLayer config
     model = keras.models.load_model(
-        model_path,
-        compile=False
+        model_path, 
+        compile=False, 
+        custom_objects={"InputLayer": LegacyInputLayer}
     )
-
 except Exception as exc:
     print(f"Primary model load failed: {exc}")
 
-    if model_path.suffix != ".keras":
-        fallback_path = model_path.with_suffix(".keras")
-    else:
-        fallback_path = model_path.with_suffix(".h5")
+    fallback_path = (
+        model_path.with_suffix(".keras")
+        if model_path.suffix != ".keras"
+        else model_path.with_suffix(".h5")
+    )
 
     if fallback_path.exists():
         print(f"Trying fallback model load: {fallback_path}")
-
         model = keras.models.load_model(
-            fallback_path,
-            compile=False
+            fallback_path, 
+            compile=False, 
+            custom_objects={"InputLayer": LegacyInputLayer}
         )
-
     else:
         raise RuntimeError(
-            f"Unable to load model from either "
-            f"'{model_path}' or '{fallback_path}'."
+            f"Unable to load model from either '{model_path}' or '{fallback_path}'."
         ) from exc
 
 model.summary()
@@ -142,11 +134,13 @@ model.summary()
 
 print("\nEvaluating original model...")
 
-original_loss, original_accuracy = model.evaluate(
-    X_valid,
-    y_valid,
-    verbose=0
+model.compile(
+    optimizer=keras.optimizers.Adam(),
+    loss=keras.losses.SparseCategoricalCrossentropy(),
+    metrics=["accuracy"],
 )
+
+original_loss, original_accuracy = model.evaluate(X_valid, y_valid, verbose=0)
 
 print(f"Original Accuracy : {original_accuracy:.4f}")
 print(f"Original Loss     : {original_loss:.4f}")
@@ -157,23 +151,19 @@ print(f"Original Loss     : {original_loss:.4f}")
 
 print("\nApplying magnitude pruning...")
 num_train_samples = X_train.shape[0]
-end_step = int(
-    np.ceil(num_train_samples / BATCH_SIZE)
-) * TRAINING_EPOCHS
+end_step = int(np.ceil(num_train_samples / BATCH_SIZE)) * TRAINING_EPOCHS
 
 pruning_params = {
-    "pruning_schedule":
-        tfmot.sparsity.keras.PolynomialDecay(
-            initial_sparsity=0.30,
-            final_sparsity=0.80,
-            begin_step=0,
-            end_step=end_step
-        )
+    "pruning_schedule": tfmot.sparsity.keras.PolynomialDecay(
+        initial_sparsity=0.30,
+        final_sparsity=0.80,
+        begin_step=0,
+        end_step=end_step,
+    )
 }
 
 pruned_model = tfmot.sparsity.keras.prune_low_magnitude(
-    model,
-    **pruning_params
+    model, **pruning_params
 )
 
 # -------------------------------------------------------------------
@@ -183,7 +173,8 @@ pruned_model = tfmot.sparsity.keras.prune_low_magnitude(
 pruned_model.compile(
     optimizer=keras.optimizers.Adam(),
     loss=keras.losses.SparseCategoricalCrossentropy(),
-    metrics=["accuracy"])
+    metrics=["accuracy"],
+)
 
 # -------------------------------------------------------------------
 # Callbacks
@@ -191,11 +182,10 @@ pruned_model.compile(
 
 callbacks = [
     tfmot.sparsity.keras.UpdatePruningStep(),
-     keras.callbacks.EarlyStopping(
-        monitor="val_accuracy",
-        patience=5,
-        restore_best_weights=True
-    )]
+    keras.callbacks.EarlyStopping(
+        monitor="val_accuracy", patience=5, restore_best_weights=True
+    ),
+]
 
 # -------------------------------------------------------------------
 # Fine Tune
@@ -211,22 +201,16 @@ try:
         batch_size=BATCH_SIZE,
         epochs=PRUNING_EPOCHS,
         callbacks=callbacks,
-        verbose=1
+        verbose=1,
     )
-
 except Exception as e:
-    raise RuntimeError(
-        f"Error during pruning fine-tuning: {e}"
-    ) from e
+    raise RuntimeError(f"Error during pruning fine-tuning: {e}") from e
+
 # -------------------------------------------------------------------
 # Evaluate Pruned Model
 # -------------------------------------------------------------------
 
-loss, accuracy = pruned_model.evaluate(
-    X_valid,
-    y_valid,
-    verbose=0
-)
+loss, accuracy = pruned_model.evaluate(X_valid, y_valid, verbose=0)
 
 print("\nPruned Model Results")
 print("----------------------------")
@@ -238,22 +222,15 @@ print(f"Loss     : {loss:.4f}")
 # -------------------------------------------------------------------
 
 print("\nRemoving pruning wrappers...")
-final_model = tfmot.sparsity.keras.strip_pruning(
-    pruned_model
-)
+final_model = tfmot.sparsity.keras.strip_pruning(pruned_model)
 
 # -------------------------------------------------------------------
 # Save Model
 # -------------------------------------------------------------------
 
-save_keras_model(
-    final_model,
-    PRUNED_MODEL_FILE
-)  
+save_keras_model(final_model, PRUNED_MODEL_FILE)
 
-print(
-    f"Saved : {PRUNED_MODEL_FILE}"
-)
+print(f"Saved : {PRUNED_MODEL_FILE}")
 if final_model is not None:
     final_model.summary()
 if not Path(PRUNED_MODEL_FILE).exists():
@@ -276,7 +253,6 @@ print(f"Pruned   : {pruned_size:.2f} MB")
 # -------------------------------------------------------------------
 
 with mlflow.start_run(run_name="MLP_Model_Pruning"):
-
     log_metrics({
         "original_accuracy": original_accuracy,
         "pruned_accuracy": accuracy,
@@ -285,10 +261,6 @@ with mlflow.start_run(run_name="MLP_Model_Pruning"):
         "pruned_model_size_mb": pruned_size,
     })
 
-    mlflow.keras.log_model(
-        keras_model=final_model,
-        artifact_path="pruned_model"
-    )
     log_params({
         "pruning_initial_sparsity": 0.30,
         "pruning_final_sparsity": 0.80,
@@ -302,17 +274,12 @@ with mlflow.start_run(run_name="MLP_Model_Pruning"):
 print("\nModel logged to MLflow.")
 
 
-# -------------------------------------------------------------------
-# Main
-# -------------------------------------------------------------------
-
 def main():
-
     print("\n===================================")
     print("Model Pruning Completed Successfully")
     print("===================================")
-
     print(f"\nSaved Model : {PRUNED_MODEL_FILE}")
+
 
 if __name__ == "__main__":
     main()

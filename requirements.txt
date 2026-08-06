@@ -6,15 +6,17 @@ matplotlib==3.10.3
 mlflow==3.1.0
 
 tensorflow==2.16.2
+tf_keras==2.16.0
 keras==3.3.3
 tensorflow-model-optimization==0.8.0
 paho-mqtt==2.1.0
+tflite-runtime==2.14.0
 
 fastapi==0.116.1
 uvicorn[standard]==0.35.0
-pydantic==2.11.7
+pydantic==2.7.4
 pydantic-settings==2.10.1
-python-dotenv==1.1.0
+python-dotenv==1.0.1
 psutil==7.0.0
 joblib==1.5.1
 

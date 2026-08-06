@@ -5,7 +5,7 @@ Common utility functions for the MLOnEdge project.
 """
 
 from pathlib import Path
-
+import os
 import mlflow
 import numpy as np
 import pandas as pd
@@ -33,6 +33,11 @@ def setup_mlflow():
     """
     Configure MLflow tracking.
     """
+
+    # Allow skipping MLflow setup for debugging or offline runs.
+    if os.getenv("SKIP_MLFLOW", "0") == "1":
+        print("SKIP_MLFLOW=1 -> skipping mlflow setup")
+        return
 
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)

@@ -1,6 +1,4 @@
 """
-config.py
-
 Centralized configuration for the MLOnEdge project.
 Loads all environment variables from .env.
 """
@@ -87,6 +85,16 @@ MODEL_FILE = MODEL_DIR / os.getenv(
 PRUNED_MODEL_FILE = MODEL_DIR / os.getenv(
     "PRUNED_MODEL_NAME",
     "best_model_pruned.keras"
+)
+
+PTQ_MODEL_FILE = MODEL_DIR / os.getenv(
+    "PTQ_MODEL_NAME",
+    "model_ptq.tflite"
+)
+
+QAT_MODEL_FILE = MODEL_DIR / os.getenv(
+    "QAT_MODEL_NAME",
+    "model_qat.tflite"
 )
 
 TFLITE_MODEL_FILE = MODEL_DIR / os.getenv(

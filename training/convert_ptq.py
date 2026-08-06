@@ -8,16 +8,34 @@ Converts the trained Keras model to a fully INT8
 TensorFlow Lite model using a representative dataset.
 """
 
+import os
 from pathlib import Path
+import sys
+import tempfile
+
+# ---------------------------------------------------------
+# Environment Setup for Legacy Keras (tf_keras)
+# MUST be set before importing tensorflow or tf_keras
+# ---------------------------------------------------------
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import mlflow
 import numpy as np
 import tensorflow as tf
+import tf_keras as keras
 
-from config import (
-    MODEL_PATH,
-    PTQ_MODEL_PATH,
-)
+# Import correct variable names from config
+try:
+    from config import MODEL_FILE, PTQ_MODEL_FILE
+except ImportError:
+    # Fallback to default path names if PTQ_MODEL_FILE isn't in config.py yet
+    from config import MODEL_FILE
+    PTQ_MODEL_FILE = Path(MODEL_FILE).parent / "model_ptq.tflite"
 
 from utils import (
     setup_mlflow,
@@ -38,9 +56,8 @@ REPRESENTATIVE_SAMPLES = 200
 
 def representative_dataset(X):
     """
-    Representative dataset used for calibration.
+    Representative dataset used for INT8 calibration.
     """
-
     num_samples = min(REPRESENTATIVE_SAMPLES, len(X))
 
     for i in range(num_samples):
@@ -72,7 +89,6 @@ def convert_to_int8():
         # ---------------------------------------
 
         df = load_training_dataset()
-
         X, _ = get_features_and_labels(df)
 
         # ---------------------------------------
@@ -80,79 +96,65 @@ def convert_to_int8():
         # ---------------------------------------
 
         mean, std = load_training_stats()
-
         X = normalize_features(X, mean, std)
-
         print(f"Calibration samples : {min(REPRESENTATIVE_SAMPLES, len(X))}")
 
         # ---------------------------------------
         # Load trained model
         # ---------------------------------------
 
-        model = load_keras_model(MODEL_PATH)
+        model_path = Path(MODEL_FILE)
+        model = load_keras_model(model_path)
 
         # ---------------------------------------
         # TFLite Converter
+        # Save to temporary SavedModel directory for full compatibility
         # ---------------------------------------
 
-        converter = tf.lite.TFLiteConverter.from_keras_model(model)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            saved_model_dir = Path(tmp_dir) / "saved_model"
+            keras.models.save_model(model, saved_model_dir, save_format="tf")
 
-        converter.optimizations = [
-            tf.lite.Optimize.DEFAULT
-        ]
+            converter = tf.lite.TFLiteConverter.from_saved_model(str(saved_model_dir))
 
-        converter.representative_dataset = lambda: representative_dataset(X)
+            converter.optimizations = [tf.lite.Optimize.DEFAULT]
+            converter.representative_dataset = lambda: representative_dataset(X)
 
-        converter.target_spec.supported_ops = [
-            tf.lite.OpsSet.TFLITE_BUILTINS_INT8
-        ]
+            # Enforce full INT8 quantization
+            converter.target_spec.supported_ops = [
+                tf.lite.OpsSet.TFLITE_BUILTINS_INT8
+            ]
 
-        converter.inference_input_type = tf.int8
-        converter.inference_output_type = tf.int8
+            converter.inference_input_type = tf.int8
+            converter.inference_output_type = tf.int8
 
-        print("\nConverting model...")
-
-        tflite_model = converter.convert()
+            print("\nConverting model...")
+            tflite_model = converter.convert()
 
         # ---------------------------------------
         # Save model
         # ---------------------------------------
 
-        PTQ_MODEL_PATH.parent.mkdir(
-            parents=True,
-            exist_ok=True
-        )
+        output_path = Path(PTQ_MODEL_FILE)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(PTQ_MODEL_PATH, "wb") as f:
+        with open(output_path, "wb") as f:
             f.write(tflite_model)
 
         print("\nINT8 model saved")
-        print(PTQ_MODEL_PATH)
-
-        model_size = PTQ_MODEL_PATH.stat().st_size / 1024
-
+        print(output_path)
+        model_size = output_path.stat().st_size / 1024
         print(f"Model Size : {model_size:.2f} KB")
 
         # ---------------------------------------
-        # MLflow
+        # MLflow Logging
         # ---------------------------------------
 
-        mlflow.log_param(
-            "quantization",
-            "INT8"
-        )
+        mlflow.log_param("quantization", "INT8")
+        mlflow.log_param("representative_samples", min(REPRESENTATIVE_SAMPLES, len(X)))
+        mlflow.log_metric("model_size_kb", model_size)
 
-        mlflow.log_param(
-            "representative_samples",
-            min(REPRESENTATIVE_SAMPLES, len(X))
-        )
-
-        mlflow.log_metric(
-            "model_size_kb",
-            model_size
-        )
-
-        log_artifact(PTQ_MODEL_PATH)
+        log_artifact(output_path)
 
     print("\nPTQ conversion completed.")
 
