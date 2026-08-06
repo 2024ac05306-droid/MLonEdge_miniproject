@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import DATASET_FILE, MODEL_DIR, FEATURE_COLUMNS, TARGET_COLUMN
-from utils import load_training_dataset, normalize_features
+from utils import load_training_dataset, load_training_stats, normalize_features
 
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -139,7 +139,8 @@ def export_m3_pruned_ptq(X_train, y_train, rep_gen):
 if __name__ == "__main__":
     # Load and prepare features
     X_raw, y = load_training_dataset(DATASET_FILE)
-    X_norm = normalize_features(X_raw)
+    mean, std = load_training_stats()
+    X_norm = normalize_features(X_raw, mean=mean, std=std)
 
     rep_gen = get_representative_dataset(X_norm, num_samples=250)
 

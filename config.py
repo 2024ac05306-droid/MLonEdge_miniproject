@@ -107,6 +107,8 @@ MODEL_FORMAT = os.getenv(
     "keras"
 )
 
+
+
 # --------------------------------------------------------
 # Training
 # --------------------------------------------------------
@@ -147,6 +149,9 @@ OUTPUT_DIR = resolve_path(
 
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+STATS_FILE = OUTPUT_DIR / "train_stats.json"
 
 # --------------------------------------------------------
 # Dataset Columns

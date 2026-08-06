@@ -7,13 +7,13 @@ cd /d E:\MTech\Sem_3\MLOnEdge
 
 sc query mosquitto
 
-python data_pipeline\simulator.py --anomaly none --duration 300
+python data_pipeline\simulator.py --anomaly none --duration 1800
 copy outputs\sensor_logs.csv outputs\sensor_logs_none.csv
 
-python data_pipeline\simulator.py --anomaly temp_drift --duration 300
+python data_pipeline\simulator.py --anomaly temp_drift --duration 1800
 copy outputs\sensor_logs.csv outputs\sensor_logs_temp_drift.csv
 
-python data_pipeline\simulator.py --anomaly combined --duration 300
+python data_pipeline\simulator.py --anomaly combined --duration 1800
 copy outputs\sensor_logs.csv outputs\sensor_logs_combined.csv
 
 python data_pipeline\preprocessing.py

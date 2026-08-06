@@ -4,6 +4,7 @@ utils.py
 Common utility functions for the MLOnEdge project.
 """
 
+import json
 from pathlib import Path
 import os
 import mlflow
@@ -12,6 +13,8 @@ import pandas as pd
 import tensorflow as tf
 
 from sklearn.model_selection import train_test_split
+from config import DATASET_FILE, FEATURE_COLUMNS, TARGET_COLUMN, STATS_FILE
+ 
 
 from config import (
     DATASET_FILE,
@@ -46,18 +49,25 @@ def setup_mlflow():
 # ---------------------------------------------------------
 # Dataset
 # ---------------------------------------------------------
-
-def load_training_dataset():
     """
     Load training dataset.
     """
+def load_training_dataset(dataset_path=None):
+    if dataset_path is None:
+        dataset_path = DATASET_FILE
 
-    if not DATASET_FILE.exists():
+    if not dataset_path.exists():
         raise FileNotFoundError(
-            f"Dataset not found : {DATASET_FILE}"
+            f"Dataset not found : {dataset_path}"
         )
 
-    return pd.read_csv(DATASET_FILE)
+    df = pd.read_csv(dataset_path)
+    
+    # Extract feature matrix (X) and target array (y)
+    X = df[FEATURE_COLUMNS].values
+    y = df[TARGET_COLUMN].values
+
+    return X, y
 
 
 # ---------------------------------------------------------
@@ -77,39 +87,40 @@ def get_features_and_labels(df):
 
 
 # ---------------------------------------------------------
-# Normalization
+# load_training_stats
 # ---------------------------------------------------------
-
 def load_training_stats():
-    """
-    Load normalization statistics.
-    """
-
-    if not TRAINING_STATS.exists():
-        raise FileNotFoundError(
-            f"Training statistics not found : {TRAINING_STATS}"
-        )
-
-    stats = np.load(
-        TRAINING_STATS,
-        allow_pickle=True
-    ).item()
-
-    mean = stats["mean"]
-
-    std = stats["std"]
-
-    std = np.where(std == 0, 1.0, std)
-
+    """Loads pre-computed training mean and std, or computes and saves them if missing."""
+    if STATS_FILE.exists():
+        with open(STATS_FILE, "r") as f:
+            stats = json.load(f)
+            mean = np.array(stats["mean"])
+            std = np.array(stats["std"])
+    else:
+        # Compute stats directly from raw training set
+        X_raw, _ = load_training_dataset()
+        mean = np.mean(X_raw, axis=0)
+        std = np.std(X_raw, axis=0)
+        
+        # Save stats to disk for consistency across services
+        STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(STATS_FILE, "w") as f:
+            json.dump({"mean": mean.tolist(), "std": std.tolist()}, f, indent=4)
+            
     return mean, std
 
 
-def normalize_features(X, mean, std):
-    """
-    Normalize feature matrix.
-    """
+# ---------------------------------------------------------
+# Normalization
+# ---------------------------------------------------------
 
-    return (X - mean) / std
+def normalize_features(X, mean=None, std=None):
+    """Normalizes features using provided or loaded training statistics."""
+    if mean is None or std is None:
+        mean, std = load_training_stats()
+        
+    std_adjusted = np.where(std == 0, 1e-8, std)
+    return (X - mean) / std_adjusted
 
 
 # ---------------------------------------------------------
@@ -212,6 +223,12 @@ def get_model_size(model_path):
 
     return model_path.stat().st_size / (1024 * 1024)
 
+def load_training_stats():
+    """Loads pre-computed training mean and std, or computes them from clean dataset."""
+    X_raw, _ = load_training_dataset()
+    mean = np.mean(X_raw, axis=0)
+    std = np.std(X_raw, axis=0)
+    return mean, std
 
 # ---------------------------------------------------------
 # MLflow Logging
