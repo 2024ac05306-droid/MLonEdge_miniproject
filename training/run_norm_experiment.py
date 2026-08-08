@@ -16,7 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import DATASET_FILE
-from utils import load_training_dataset, load_training_stats, normalize_features
+from utils import load_training_dataset, load_training_stats, normalize_features, get_features_and_labels
 
 # Load TFLite Interpreter
 try:
@@ -65,7 +65,8 @@ def evaluate_tflite(model_path: Path, X_norm: np.ndarray, y_true: np.ndarray):
 
 if __name__ == "__main__":
     # 1. Load Raw Dataset & Stats
-    X_raw, y = load_training_dataset(DATASET_FILE)
+    df = load_training_dataset(DATASET_FILE)
+    X_raw, y = get_features_and_labels(df)
     mean, std = load_training_stats()
 
     # Split to extract validation set (20%)

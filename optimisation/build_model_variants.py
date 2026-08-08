@@ -9,6 +9,7 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_model_optimization as tfmot
 from sklearn.model_selection import train_test_split
+import mlflow
 
 # Project Root Setup
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -16,7 +17,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import DATASET_FILE, MODEL_DIR, FEATURE_COLUMNS, TARGET_COLUMN
-from utils import load_training_dataset, load_training_stats, normalize_features
+from utils import load_training_dataset, load_training_stats, normalize_features, get_features_and_labels
 
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -71,6 +72,7 @@ def export_m1_fp32(keras_model):
     with open(M1_PATH, "wb") as f:
         f.write(tflite_model)
     print(f"M1 Saved: {M1_PATH} ({len(tflite_model) / 1024:.2f} KB)")
+    return M1_PATH
 
 
 def export_m2_ptq(keras_model, rep_gen):
@@ -88,7 +90,7 @@ def export_m2_ptq(keras_model, rep_gen):
     with open(M2_PATH, "wb") as f:
         f.write(tflite_model)
     print(f"M2 Saved: {M2_PATH} ({len(tflite_model) / 1024:.2f} KB)")
-
+    return M2_PATH
 
 def export_m3_pruned_ptq(X_train, y_train, rep_gen):
     """Variant M3: Apply 35% structured filter pruning with PolynomialDecay, then PTQ INT8."""
@@ -143,15 +145,22 @@ def export_m3_pruned_ptq(X_train, y_train, rep_gen):
     with open(M3_PATH, "wb") as f:
         f.write(tflite_model)
     print(f"M3 Saved: {M3_PATH} ({len(tflite_model) / 1024:.2f} KB)")
+    return M3_PATH
 
 
 if __name__ == "__main__":
+    # Define target TFLite paths
+    p1 = MODEL_DIR / "model_fp32.tflite"
+    p2 = MODEL_DIR / "model_ptq.tflite"
+    p3 = MODEL_DIR / "model_pruned_ptq.tflite"
     # Initialize MLflow Experiment
     mlflow.set_experiment("Task_F1_Model_Export")
 
     with mlflow.start_run(run_name="Build_and_Export_Variants"):
         # Data loading and preprocessing
-        X_raw, y = load_training_dataset(DATASET_FILE)
+        df = load_training_dataset(DATASET_FILE)
+        X_raw, y = get_features_and_labels(df)
+
         mean, std = load_training_stats()
         X_norm = normalize_features(X_raw, mean=mean, std=std)
 

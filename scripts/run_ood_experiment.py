@@ -1,9 +1,17 @@
+import sys
+
 import numpy as np
+from pathlib import Path
 from sklearn.metrics import accuracy_score, recall_score
 from sklearn.model_selection import train_test_split
 import tensorflow.lite as tflite
 
-from utils import load_training_dataset, load_training_stats, normalize_features
+# Add project root directory to sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from utils import get_features_and_labels, load_training_dataset, load_training_stats, normalize_features
 from config import DATASET_FILE, MODEL_DIR
 
 def evaluate_model_on_data(interpreter, X_data, y_true):
@@ -38,7 +46,8 @@ def evaluate_model_on_data(interpreter, X_data, y_true):
 
 if __name__ == "__main__":
     # 1. Load Data and Base Stats
-    X_raw, y = load_training_dataset(DATASET_FILE)
+    df = load_training_dataset(DATASET_FILE)
+    X_raw, y = get_features_and_labels(df)
     mean, std = load_training_stats()
 
     # Split into clean validation set

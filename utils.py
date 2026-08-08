@@ -62,12 +62,8 @@ def load_training_dataset(dataset_path=None):
         )
 
     df = pd.read_csv(dataset_path)
-    
-    # Extract feature matrix (X) and target array (y)
-    X = df[FEATURE_COLUMNS].values
-    y = df[TARGET_COLUMN].values
 
-    return X, y
+    return df
 
 
 # ---------------------------------------------------------
@@ -87,7 +83,7 @@ def get_features_and_labels(df):
 
 
 # ---------------------------------------------------------
-# load_training_stats
+# save_normal_training_stats
 # ---------------------------------------------------------
 # Paths setup
 # Path configuration
@@ -111,26 +107,6 @@ def save_normal_training_stats(X_clean_normal, file_path=STATS_FILE):
     return mean, std
 
 
-def load_training_stats(file_path=STATS_FILE):
-    """Loads pre-computed training mean and std from saved .npy file."""
-    path = Path(file_path)
-    
-    if not path.exists():
-        # Fallback check for root or Docker container directory
-        fallback = BASE_DIR / "training_stats.npy"
-        if fallback.exists():
-            path = fallback
-        else:
-            raise FileNotFoundError(
-                f"Training stats file not found at {file_path} or {fallback}. "
-                "Ensure training_stats.npy was generated during preprocessing."
-            )
-
-    stats = np.load(path, allow_pickle=True).item()
-    return stats["mean"], stats["std"]
-
-
-
 # ---------------------------------------------------------
 # Normalization
 # ---------------------------------------------------------
@@ -138,7 +114,7 @@ def load_training_stats(file_path=STATS_FILE):
 def normalize_features(X, mean=None, std=None):
     """Normalizes features using provided or loaded training statistics."""
     if mean is None or std is None:
-        mean, std = load_training_stats()
+        mean, std = load_training_stats(TRAINING_STATS, DATASET_FILE)
         
     std_adjusted = np.where(std == 0, 1e-8, std)
     return (X - mean) / std_adjusted
@@ -244,11 +220,42 @@ def get_model_size(model_path):
 
     return model_path.stat().st_size / (1024 * 1024)
 
-def load_training_stats():
-    """Loads pre-computed training mean and std, or computes them from clean dataset."""
-    X_raw, _ = load_training_dataset()
+def load_training_stats(stats_path=None, dataset_path=None):
+    """
+    Loads pre-computed training mean and std from saved .npy file,
+    or computes and saves them if missing.
+    """
+    if stats_path is None:
+        stats_path = STATS_FILE
+    if dataset_path is None:
+        dataset_path = DATASET_FILE
+
+    stats_path = Path(stats_path)
+
+    # 1. Check primary location
+    if stats_path.exists():
+        stats = np.load(stats_path, allow_pickle=True).item()
+        return stats["mean"], stats["std"]
+
+    # 2. Check fallback root directory
+    fallback = BASE_DIR / "training_stats.npy"
+    if fallback.exists():
+        stats = np.load(fallback, allow_pickle=True).item()
+        return stats["mean"], stats["std"]
+
+    # 3. Otherwise, compute stats from raw training dataset and save
+    print(f"[INFO] Stats file not found at {stats_path}. Computing normalization stats from dataset...")
+    df = load_training_dataset(dataset_path)
+    X_raw, _ = get_features_and_labels(df)
+
     mean = np.mean(X_raw, axis=0)
     std = np.std(X_raw, axis=0)
+
+    # Save to disk
+    stats_path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(stats_path, {"mean": mean, "std": std})
+    print(f"[INFO] Saved normalization stats to {stats_path}")
+
     return mean, std
 
 # ---------------------------------------------------------

@@ -38,6 +38,7 @@ import tf_keras as keras
 from config import (
     MODEL_FILE,
     DATASET_FILE,
+    TRAINING_STATS,
     TRAINING_EPOCHS,
     BATCH_SIZE,
     FEATURE_COLUMNS,
@@ -79,15 +80,26 @@ print_dataset_info(df)
 # Load Saved Statistics
 # =====================================================
 
-mean, std = load_training_stats()
-X = normalize_features(X, mean, std)
+# 1. Load normalization parameters
+# mean, std = load_training_stats(TRAINING_STATS, DATASET_FILE)
+
+# 2. Extract features (X) and target labels (y)
+X_raw, y = get_features_and_labels(df)
 
 
 # =====================================================
 # Train / Validation Split
 # =====================================================
 
-X_train, X_valid, y_train, y_valid = split_dataset(X, y)
+# 2. Split RAW data first
+X_train_raw, X_valid_raw, y_train, y_valid = split_dataset(X_raw, y)
+# 3. Compute mean and std ONLY from X_train
+mean = np.mean(X_train_raw, axis=0)
+std = np.std(X_train_raw, axis=0)
+
+# 4. Standardize train and validation sets separately using training stats
+X_train = normalize_features(X_train_raw, mean, std)
+X_valid = normalize_features(X_valid_raw, mean, std)
 
 print(f"\nTraining samples   : {len(X_train)}")
 print(f"Validation samples : {len(X_valid)}")
@@ -192,17 +204,28 @@ print(f"\nModel saved : {MODEL_FILE}")
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "./outputs"))
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-cm = confusion_matrix(y_valid, y_pred)
-disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=CLASS_NAMES)
-
-fig, ax = plt.subplots(figsize=(6, 6))
-disp.plot(ax=ax, cmap="Blues", colorbar=False)
-plt.tight_layout()
-
+# Define plot file paths
 CONFUSION_MATRIX = OUTPUT_DIR / "confusion_matrix.png"
 TRAINING_CURVE = OUTPUT_DIR / "training_curve.png"
 
+cm = confusion_matrix(y_valid, y_pred)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=CLASS_NAMES)
+
+# Save Confusion Matrix
+fig, ax = plt.subplots(figsize=(6, 6))
+disp.plot(ax=ax, cmap="Blues", colorbar=False)
+plt.tight_layout()
 plt.savefig(CONFUSION_MATRIX, dpi=300)
+plt.close()
+# Plot and Save Training Loss Curve
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.plot(history.history["loss"], label="Train Loss")
+ax.plot(history.history["val_loss"], label="Val Loss")
+ax.set_title("Training and Validation Loss")
+ax.set_xlabel("Epoch")
+ax.set_ylabel("Loss")
+ax.legend()
+plt.tight_layout()
 plt.savefig(TRAINING_CURVE, dpi=300)
 plt.close()
 

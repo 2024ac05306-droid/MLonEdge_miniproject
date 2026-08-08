@@ -3,9 +3,20 @@ Unit and integration tests for feature preprocessing, quantization, and OOD shif
 """
 
 import pytest
+import sys
+from pathlib import Path
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics import accuracy_score
+
+
+# Add project root directory to sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Import from the optimisation module
+from optimisation.build_model_variants import get_representative_dataset
 
 from utils import normalize_features
 from build_model_variants_3 import get_representative_dataset

@@ -18,8 +18,9 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-from utils import load_training_dataset, load_training_stats, normalize_features
+    
+from config import DATASET_FILE, MODEL_DIR
+from utils import load_training_dataset, load_training_stats, normalize_features, get_features_and_labels
 
 # TFLite Loader
 try:
@@ -211,7 +212,8 @@ if __name__ == "__main__":
     # Add this line to explicitly set the MLflow experiment name
     mlflow.set_experiment("Task_F2_Edge_Benchmarking")
     # Load dataset and stats
-    X_raw, y = load_training_dataset()
+    df = load_training_dataset(DATASET_FILE)
+    X_raw, y = get_features_and_labels(df)
     mean, std = load_training_stats()
     X_norm = normalize_features(X_raw, mean, std)
 

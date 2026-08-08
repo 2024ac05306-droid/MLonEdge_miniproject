@@ -1,0 +1,4 @@
+variant,mean_latency_ms,p95_latency_ms,size_kb,accuracy_pct,class2_recall_pct,energy_mj
+M1 — FP32 Baseline,0.0359,0.0527,12.36,95.71,100.0,0.5383
+M2 — PTQ INT8,0.0194,0.0202,5.41,84.29,73.08,0.0291
+M3 — Pruned 35% + PTQ,0.0514,0.0807,5.43,78.57,100.0,0.7278
