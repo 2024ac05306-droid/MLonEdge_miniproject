@@ -88,9 +88,10 @@ X = normalize_features(X, mean, std)
 
 X_train, X_valid, y_train, y_valid = split_dataset(X, y)
 
-print()
-print("Training samples   :", len(X_train))
-print("Validation samples :", len(X_valid))
+print(f"\nTraining samples   : {len(X_train)}")
+print(f"Validation samples : {len(X_valid)}")
+print(f"Feature columns    : {len(FEATURE_COLUMNS)}")
+print(f"Class names        : {CLASS_NAMES}")
 
 
 # =====================================================
@@ -150,7 +151,7 @@ from sklearn.metrics import (
 )
 
 # =====================================================
-# Validation
+# # Evaluation & Assignment Quality Gate
 # =====================================================
 
 y_prob = model.predict(X_valid, verbose=0)
@@ -165,6 +166,7 @@ print(classification_report(y_valid, y_pred, target_names=CLASS_NAMES))
 
 # =====================================================
 # Assignment Requirement
+# Mandatory Quality Threshold Check (Task D1)
 # =====================================================
 
 if accuracy < 0.88:
@@ -233,3 +235,15 @@ with mlflow.start_run(run_name="MLP_Training"):
 
 print("\nTraining completed successfully.")
 print(f"Validation Accuracy : {accuracy * 100:.2f}%")
+
+def print_model_results(loss, accuracy):
+    """
+    Display evaluation results.
+    """
+
+    print("=" * 50)
+    print("Evaluation")
+    print("=" * 50)
+    print(f"Loss     : {loss:.4f}")
+    print(f"Accuracy : {accuracy:.4f}")
+    print("=" * 50)

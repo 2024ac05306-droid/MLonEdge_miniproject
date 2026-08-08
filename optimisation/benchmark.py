@@ -1,21 +1,21 @@
 import os
 import sys
 import time
+import psutil
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 from sklearn.metrics import accuracy_score, recall_score
+from sklearn.model_selection import train_test_split
+import mlflow
 
 # Path Setup
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 MODELS_DIR = PROJECT_ROOT / "models"
-
-# Output folder directed to Optimisation/results
 RESULTS_DIR = PROJECT_ROOT / "optimisation" / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Fix sys.path so Python can locate utils.py in project root
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
@@ -27,39 +27,78 @@ try:
 except ImportError:
     import tensorflow.lite as tflite
 
+# System TDP Estimate for Laptop (e.g., 15W / 15000 mW base TDP)
+LAPTOP_TDP_MW = 15000.0  
 
-def evaluate_tflite_model(model_path: Path, X_test: np.ndarray, y_test: np.ndarray):
-    """Evaluates latency, file size, accuracy, Class 2 recall, and estimated energy."""
+
+def measure_power_consumption_mw() -> float:
+    """Estimates active system power in mW using psutil CPU utilization and laptop TDP."""
+    cpu_utilization = psutil.cpu_percent(interval=0.05) / 100.0
+    # Base idle power fraction (10% TDP) + active utilization scaling
+    estimated_power_mw = LAPTOP_TDP_MW * (0.10 + 0.90 * cpu_utilization)
+    return estimated_power_mw
+
+
+def evaluate_tflite_model(model_path: Path, X_val: np.ndarray, y_val: np.ndarray):
+    """Evaluates the 5 required Task F2 metrics on a held-out validation set."""
     interpreter = tflite.Interpreter(model_path=str(model_path))
     interpreter.allocate_tensors()
     input_details = interpreter.get_input_details()
     output_details = interpreter.get_output_details()
 
-    latencies = []
-    y_pred = []
+    # --- Metric 1: Model File Size (KB) ---
+    size_kb = float(os.path.getsize(model_path) / 1024.0)
 
-    # Warmup
-    dummy = np.expand_dims(X_test[0], axis=0).astype(np.float32)
+    # --- Task Requirement: 10 Warm-up Runs ---
+    warmup_sample = np.expand_dims(X_val[0], axis=0).astype(np.float32)
     if input_details[0]['dtype'] == np.int8:
         scale, zero_point = input_details[0]['quantization']
-        dummy = (dummy / scale + zero_point).astype(np.int8)
-    interpreter.set_tensor(input_details[0]['index'], dummy)
-    interpreter.invoke()
+        warmup_sample = np.clip(np.round(warmup_sample / scale + zero_point), -128, 127).astype(np.int8)
 
-    # Benchmark loop
-    for sample in X_test:
-        input_data = np.expand_dims(sample, axis=0).astype(np.float32)
+    for _ in range(10):
+        interpreter.set_tensor(input_details[0]['index'], warmup_sample)
+        interpreter.invoke()
+
+    # --- Task Requirement: 200 Runs Latency Benchmarking ---
+    latencies = []
+    # Sample 200 instances for latency timing
+    num_runs = 200
+    bench_indices = np.random.choice(len(X_val), size=num_runs, replace=True)
+
+    for idx in bench_indices:
+        sample = np.expand_dims(X_val[idx], axis=0).astype(np.float32)
         if input_details[0]['dtype'] == np.int8:
             scale, zero_point = input_details[0]['quantization']
-            input_data = (input_data / scale + zero_point).astype(np.int8)
+            sample = np.clip(np.round(sample / scale + zero_point), -128, 127).astype(np.int8)
 
         t0 = time.perf_counter()
-        interpreter.set_tensor(input_details[0]['index'], input_data)
+        interpreter.set_tensor(input_details[0]['index'], sample)
+        interpreter.invoke()
+        t1 = time.perf_counter()
+        
+        latencies.append((t1 - t0) * 1000.0)  # Convert to ms
+
+    latencies = np.array(latencies)
+    # --- Metric 2 & 3: Mean Latency & p95 Latency ---
+    mean_lat_ms = float(np.mean(latencies))
+    p95_lat_ms = float(np.percentile(latencies, 95))
+
+    # --- Metric 4: Energy per Inference (mJ) using E = P * t ---
+    power_mw = measure_power_consumption_mw()
+    # E (mJ) = Power (mW) * time (seconds) = Power (mW) * (latency_ms / 1000.0)
+    energy_mj = float(power_mw * (mean_lat_ms / 1000.0))
+
+    # --- Metric 5: Accuracy & Class 2 Recall on Held-Out Validation Set ---
+    y_pred = []
+    for sample_raw in X_val:
+        sample = np.expand_dims(sample_raw, axis=0).astype(np.float32)
+        if input_details[0]['dtype'] == np.int8:
+            scale, zero_point = input_details[0]['quantization']
+            sample = np.clip(np.round(sample / scale + zero_point), -128, 127).astype(np.int8)
+
+        interpreter.set_tensor(input_details[0]['index'], sample)
         interpreter.invoke()
         output = interpreter.get_tensor(output_details[0]['index'])
-        t1 = time.perf_counter()
-
-        latencies.append((t1 - t0) * 1000.0)  # ms
 
         if output_details[0]['dtype'] == np.int8:
             scale, zero_point = output_details[0]['quantization']
@@ -68,35 +107,26 @@ def evaluate_tflite_model(model_path: Path, X_test: np.ndarray, y_test: np.ndarr
         pred = np.argmax(output, axis=1)[0]
         y_pred.append(pred)
 
-    latencies = np.array(latencies)
-    mean_lat = float(np.mean(latencies))
-    p95_lat = float(np.percentile(latencies, 95))
-    size_kb = float(os.path.getsize(model_path) / 1024.0)
-    acc = float(accuracy_score(y_test, y_pred) * 100.0)
-    
-    # Class 2 Recall (Critical Fault Class)
-    c2_recall = float(recall_score(y_test, y_pred, labels=[2], average=None)[0] * 100.0)
-    
-    # Energy estimate (approx. 0.75 mW baseline power scaling with latency)
-    energy_mJ = float(mean_lat * 0.75)
+    acc_pct = float(accuracy_score(y_val, y_pred) * 100.0)
+    c2_recall_pct = float(recall_score(y_val, y_pred, labels=[2], average=None, zero_division=0)[0] * 100.0)
 
     return {
-        "mean_latency_ms": round(mean_lat, 4),
-        "p95_latency_ms": round(p95_lat, 4),
+        "mean_latency_ms": round(mean_lat_ms, 4),
+        "p95_latency_ms": round(p95_lat_ms, 4),
         "size_kb": round(size_kb, 2),
-        "accuracy_pct": round(acc, 2),
-        "class2_recall_pct": round(c2_recall, 2),
-        "energy_mj": round(energy_mJ, 4)
+        "accuracy_pct": round(acc_pct, 2),
+        "class2_recall_pct": round(c2_recall_pct, 2),
+        "energy_mj": round(energy_mj, 4)
     }
 
 
 def print_evaluation_table(df: pd.DataFrame):
-    """Prints a formatted evaluation table to the terminal."""
+    """Prints a formatted evaluation table to terminal."""
     header = f"{'Model Variant':<25} | {'Mean Lat (ms)':<13} | {'p95 Lat (ms)':<12} | {'Size (KB)':<10} | {'Acc (%)':<8} | {'Class 2 Rec (%)':<15} | {'Energy (mJ)':<11}"
     divider = "=" * len(header)
     
     print("\n" + divider)
-    print("METRICS EVALUATION TABLE")
+    print("TASK F2 — METRICS EVALUATION TABLE")
     print(divider)
     print(header)
     print("-" * len(header))
@@ -115,25 +145,19 @@ def print_evaluation_table(df: pd.DataFrame):
 
 
 def generate_pareto_chart(df: pd.DataFrame, output_path: Path):
-    """Generates a clear, non-overlapping Latency vs Accuracy Pareto trade-off plot."""
+    """Generates Latency vs Accuracy Pareto trade-off plot."""
     fig, ax = plt.subplots(figsize=(9, 6), dpi=300)
-    
-    # Custom styling
     ax.set_facecolor("#f8f9fa")
     ax.grid(True, linestyle="--", alpha=0.5, color="#cccccc")
 
-    # Define distinct markers and colors for each model variant
     styles = {
-        0: {"color": "#1f77b4", "marker": "o", "xytext": (-35, 15)},   # Top-left offset
-        1: {"color": "#ff7f0e", "marker": "s", "xytext": (0, -28)},   # Bottom-center offset
-        2: {"color": "#2ca02c", "marker": "^", "xytext": (35, 15)},   # Top-right offset
+        0: {"color": "#1f77b4", "marker": "o", "xytext": (-35, 15)},
+        1: {"color": "#ff7f0e", "marker": "s", "xytext": (0, -28)},
+        2: {"color": "#2ca02c", "marker": "^", "xytext": (35, 15)},
     }
 
-    # Plot scatter points and non-overlapping annotations
     for idx, (_, row) in enumerate(df.iterrows()):
         style = styles.get(idx, {"color": "#333333", "marker": "o", "xytext": (0, 15)})
-        
-        # Plot model point
         ax.scatter(
             row["mean_latency_ms"],
             row["accuracy_pct"],
@@ -146,7 +170,6 @@ def generate_pareto_chart(df: pd.DataFrame, output_path: Path):
             label=row["variant"]
         )
 
-        # Annotate with custom offsets to eliminate overlap
         label_text = f"{row['variant']}\n({row['size_kb']:.1f} KB | {row['accuracy_pct']:.1f}%)"
         ax.annotate(
             label_text,
@@ -161,10 +184,7 @@ def generate_pareto_chart(df: pd.DataFrame, output_path: Path):
             arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=0.2", color="#666666", lw=1)
         )
 
-    # Sort data for Pareto step-line
     sorted_df = df.sort_values(by="mean_latency_ms")
-    
-    # Draw Pareto Frontier Line (Step-wise)
     ax.plot(
         sorted_df["mean_latency_ms"],
         sorted_df["accuracy_pct"],
@@ -176,24 +196,29 @@ def generate_pareto_chart(df: pd.DataFrame, output_path: Path):
         label="Frontier Trend"
     )
 
-    # Formatting axes and margins
     ax.set_title("Edge Optimization Trade-off: Latency vs. Accuracy", fontsize=13, fontweight="bold", pad=15)
     ax.set_xlabel("Mean Inference Latency (ms)", fontsize=11, labelpad=8)
     ax.set_ylabel("Accuracy (%)", fontsize=11, labelpad=8)
-
-    # Expand margins so annotations do not get cropped at edges
     ax.margins(x=0.2, y=0.2)
     ax.legend(loc="lower right", frameon=True, facecolor="white", framealpha=0.9, fontsize=9)
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close()
-    print(f"[SUCCESS] Saved Enhanced Pareto Chart to: {output_path}")
+
 
 if __name__ == "__main__":
+    # Add this line to explicitly set the MLflow experiment name
+    mlflow.set_experiment("Task_F2_Edge_Benchmarking")
+    # Load dataset and stats
     X_raw, y = load_training_dataset()
     mean, std = load_training_stats()
     X_norm = normalize_features(X_raw, mean, std)
+
+    # Held-out 20% validation split
+    _, X_val, _, y_val = train_test_split(
+        X_norm, y, test_size=0.20, random_state=42, stratify=y
+    )
 
     models = {
         "M1 — FP32 Baseline": MODELS_DIR / "model_fp32.tflite",
@@ -202,24 +227,42 @@ if __name__ == "__main__":
     }
 
     results = []
-    for variant, path in models.items():
-        print(f"[INFO] Benchmarking {variant}...")
-        metrics = evaluate_tflite_model(path, X_norm, y)
-        metrics["variant"] = variant
-        results.append(metrics)
+# Parent MLflow Run for the full benchmark suite
+    with mlflow.start_run(run_name="Edge_Benchmark_Suite"):
+        for variant_name, path in models.items():
+            print(f"[INFO] Benchmarking {variant_name}...")
+            
+            # Nested run per model variant
+            with mlflow.start_run(run_name=variant_name, nested=True):
+                metrics = evaluate_tflite_model(path, X_val, y_val)
+                metrics["variant"] = variant_name
+                results.append(metrics)
 
-    df = pd.DataFrame(results)
-    
-    cols = ["variant", "mean_latency_ms", "p95_latency_ms", "size_kb", "accuracy_pct", "class2_recall_pct", "energy_mj"]
-    df = df[cols]
+                # Log individual metrics to MLflow
+                mlflow.log_metrics({
+                    "mean_latency_ms": metrics["mean_latency_ms"],
+                    "p95_latency_ms": metrics["p95_latency_ms"],
+                    "size_kb": metrics["size_kb"],
+                    "accuracy_pct": metrics["accuracy_pct"],
+                    "class2_recall_pct": metrics["class2_recall_pct"],
+                    "energy_mj": metrics["energy_mj"]
+                })
 
-    # Print table to console
-    print_evaluation_table(df)
+        # Process results DataFrame
+        df = pd.DataFrame(results)
+        cols = ["variant", "mean_latency_ms", "p95_latency_ms", "size_kb", "accuracy_pct", "class2_recall_pct", "energy_mj"]
+        df = df[cols]
 
-    # Save outputs to optimisation/results/
-    csv_path = RESULTS_DIR / "benchmark_results.csv"
-    df.to_csv(csv_path, index=False)
-    print(f"[SUCCESS] Saved Benchmark Results CSV to: {csv_path}")
+        print_evaluation_table(df)
 
-    chart_path = RESULTS_DIR / "pareto_chart.png"
-    generate_pareto_chart(df, chart_path)
+        # Save CSV and log as MLflow artifact
+        csv_path = RESULTS_DIR / "benchmark_results.csv"
+        df.to_csv(csv_path, index=False)
+        mlflow.log_artifact(str(csv_path), artifact_path="benchmark_outputs")
+        print(f"[SUCCESS] Saved Benchmark Results CSV to: {csv_path}")
+
+        # Save Pareto plot and log as MLflow artifact
+        chart_path = RESULTS_DIR / "pareto_chart.png"
+        generate_pareto_chart(df, chart_path)
+        mlflow.log_artifact(str(chart_path), artifact_path="benchmark_outputs")
+        print(f"[SUCCESS] Saved Enhanced Pareto Chart to: {chart_path}")

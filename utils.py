@@ -89,25 +89,46 @@ def get_features_and_labels(df):
 # ---------------------------------------------------------
 # load_training_stats
 # ---------------------------------------------------------
-def load_training_stats():
-    """Loads pre-computed training mean and std, or computes and saves them if missing."""
-    if STATS_FILE.exists():
-        with open(STATS_FILE, "r") as f:
-            stats = json.load(f)
-            mean = np.array(stats["mean"])
-            std = np.array(stats["std"])
-    else:
-        # Compute stats directly from raw training set
-        X_raw, _ = load_training_dataset()
-        mean = np.mean(X_raw, axis=0)
-        std = np.std(X_raw, axis=0)
-        
-        # Save stats to disk for consistency across services
-        STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(STATS_FILE, "w") as f:
-            json.dump({"mean": mean.tolist(), "std": std.tolist()}, f, indent=4)
-            
+# Paths setup
+# Path configuration
+BASE_DIR = Path(__file__).resolve().parent
+STATS_FILE = BASE_DIR / "data" / "training_stats.npy"
+
+
+def save_normal_training_stats(X_clean_normal, file_path=STATS_FILE):
+    """
+    Computes mean and std strictly from clean Normal-class data (10 mins)
+    and saves them to a .npy file during offline preprocessing.
+    """
+    mean = np.mean(X_clean_normal, axis=0)
+    std = np.std(X_clean_normal, axis=0)
+
+    file_path = Path(file_path)
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    np.save(file_path, {"mean": mean, "std": std})
+    print(f"[INFO] Saved clean Normal-class training stats to {file_path}")
     return mean, std
+
+
+def load_training_stats(file_path=STATS_FILE):
+    """Loads pre-computed training mean and std from saved .npy file."""
+    path = Path(file_path)
+    
+    if not path.exists():
+        # Fallback check for root or Docker container directory
+        fallback = BASE_DIR / "training_stats.npy"
+        if fallback.exists():
+            path = fallback
+        else:
+            raise FileNotFoundError(
+                f"Training stats file not found at {file_path} or {fallback}. "
+                "Ensure training_stats.npy was generated during preprocessing."
+            )
+
+    stats = np.load(path, allow_pickle=True).item()
+    return stats["mean"], stats["std"]
+
 
 
 # ---------------------------------------------------------

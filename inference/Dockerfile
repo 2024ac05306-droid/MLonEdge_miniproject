@@ -19,12 +19,12 @@ COPY requirements.txt .
 # Install all Python packages (pip layer placed BEFORE model copy)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source code and utility modules
-COPY config.py utils.py ./
+# Copy source code, utilities, and training statistics
+COPY config.py utils.py training_stats.npy ./
 COPY inference/ ./inference/
 
 # Copy model files LAST so model updates only invalidate the final layer
 COPY models/ ./models/
 
 # Command to launch the inference listener/publisher service
-CMD ["python", "inference/mqtt_inference_service.py"]
+CMD ["python", "inference/inference_service.py"]

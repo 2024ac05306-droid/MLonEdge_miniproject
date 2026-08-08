@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import tensorflow as tf
 import tensorflow_model_optimization as tfmot
+from sklearn.model_selection import train_test_split
 
 # Project Root Setup
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -42,13 +43,21 @@ def build_base_keras_model(input_shape=(6,), num_classes=3):
     return model
 
 
-def get_representative_dataset(X_norm, num_samples=250):
-    """Yield calibration samples for full INT8 post-training quantization."""
-    calibration_data = X_norm[:num_samples].astype(np.float32)
+def get_representative_dataset(X_data: np.ndarray, num_samples: int = 250):
+    """Generates a calibration dataset generator for full INT8 post-training quantization."""
+    # Ensure float32 dtype
+    X_data = X_data.astype(np.float32)
+    
+    # Shuffle or randomly sample indices to represent true data distribution
+    num_samples = min(num_samples, len(X_data))
+    np.random.seed(42)  # Fixed seed for reproducible quantization
+    indices = np.random.choice(len(X_data), size=num_samples, replace=False)
+    calibration_data = X_data[indices]
 
     def representative_dataset_gen():
-        for i in range(len(calibration_data)):
-            yield [np.expand_dims(calibration_data[i], axis=0)]
+        for sample in calibration_data:
+            # TFLite expects shape (1, num_features) with batch dimension
+            yield [np.expand_dims(sample, axis=0)]
 
     return representative_dataset_gen
 
@@ -137,18 +146,54 @@ def export_m3_pruned_ptq(X_train, y_train, rep_gen):
 
 
 if __name__ == "__main__":
-    # Load and prepare features
-    X_raw, y = load_training_dataset(DATASET_FILE)
-    mean, std = load_training_stats()
-    X_norm = normalize_features(X_raw, mean=mean, std=std)
+    # Initialize MLflow Experiment
+    mlflow.set_experiment("Task_F1_Model_Export")
 
-    rep_gen = get_representative_dataset(X_norm, num_samples=250)
+    with mlflow.start_run(run_name="Build_and_Export_Variants"):
+        # Data loading and preprocessing
+        X_raw, y = load_training_dataset(DATASET_FILE)
+        mean, std = load_training_stats()
+        X_norm = normalize_features(X_raw, mean=mean, std=std)
 
-    # Train base Keras model
-    base_model = build_base_keras_model(input_shape=(X_norm.shape[1],))
-    base_model.fit(X_norm, y, epochs=15, batch_size=32, verbose=0)
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_norm, y, test_size=0.20, random_state=42, stratify=y
+        )
 
-    # Export all variants
-    export_m1_fp32(base_model)
-    export_m2_ptq(base_model, rep_gen)
-    export_m3_pruned_ptq(X_norm, y, rep_gen)
+        # Log parameters
+        epochs = 15
+        batch_size = 32
+        mlflow.log_params({
+            "test_split": 0.20,
+            "random_state": 42,
+            "batch_size": batch_size,
+            "base_epochs": epochs,
+            "pruning_epochs": 10,
+            "pruning_target_sparsity": 0.35,
+            "num_calibration_samples": 250
+        })
+
+        # Train Base Keras Model
+        base_model = build_base_keras_model(input_shape=(X_train.shape[1],))
+        history = base_model.fit(
+            X_train, y_train, 
+            epochs=epochs, 
+            batch_size=batch_size, 
+            verbose=0, 
+            validation_data=(X_val, y_val)
+        )
+
+        # Log training & validation metrics
+        mlflow.log_metric("base_final_train_acc", history.history['accuracy'][-1])
+        mlflow.log_metric("base_final_val_acc", history.history['val_accuracy'][-1])
+
+        # Export variants and generate artifacts
+        p1 = export_m1_fp32(base_model)
+        p2 = export_m2_ptq(base_model, get_representative_dataset(X_train, num_samples=250))
+        p3 = export_m3_pruned_ptq(X_train, y_train, get_representative_dataset(X_train, num_samples=250))
+
+        # Log .tflite artifacts to MLflow
+        mlflow.log_artifact(str(p1), artifact_path="tflite_models")
+        mlflow.log_artifact(str(p2), artifact_path="tflite_models")
+        mlflow.log_artifact(str(p3), artifact_path="tflite_models")
+
+        print("\n[SUCCESS] Model building, export, and MLflow tracking complete.")
