@@ -23,6 +23,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY config.py utils.py training_stats.npy ./
 COPY inference/ ./inference/
 
+# Copy data artifacts (e.g., training_stats.npy) if required by config
+COPY data/ ./data/
+
 # Copy model files LAST so model updates only invalidate the final layer
 COPY models/ ./models/
 

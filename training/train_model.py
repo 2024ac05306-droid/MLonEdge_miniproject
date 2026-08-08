@@ -37,6 +37,7 @@ import tf_keras as keras
 
 from config import (
     MODEL_FILE,
+    DATASET_FILE,
     TRAINING_EPOCHS,
     BATCH_SIZE,
     FEATURE_COLUMNS,
@@ -69,9 +70,9 @@ setup_mlflow()
 # Load Dataset
 # =====================================================
 
-df = load_training_dataset()
+df = load_training_dataset(DATASET_FILE)
 print_dataset_info(df)
-X, y = get_features_and_labels(df)
+
 
 
 # =====================================================

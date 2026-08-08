@@ -1,0 +1,21 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Git & IDE metadata
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# MLflow runs and raw logs (prevents bloating image)
+mlruns/
+outputs/sensor_logs*.csv
+*.log
