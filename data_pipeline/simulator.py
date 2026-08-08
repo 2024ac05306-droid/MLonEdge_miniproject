@@ -189,7 +189,7 @@ def run_simulation(anomaly_mode: str, duration_sec: int = 300):
         # Save artifacts
         # --------------------------------------------------
         os.makedirs("outputs", exist_ok=True)
-        csv_path = "outputs/sensor_logs.csv"
+        csv_path = f"outputs/sensor_logs_{anomaly_mode}.csv"
 
         df = pd.DataFrame(sensor_logs)
         df.to_csv(csv_path, index=False)
