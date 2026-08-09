@@ -19,7 +19,6 @@ if str(PROJECT_ROOT) not in sys.path:
 from optimisation.build_model_variants import get_representative_dataset
 
 from utils import normalize_features
-from build_model_variants_3 import get_representative_dataset
 
 
 class TestFeatureNormalization:

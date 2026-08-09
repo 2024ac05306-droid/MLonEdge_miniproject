@@ -1,0 +1,97 @@
+{
+    "drift_mode": "moderate",
+    "random_seed": 42,
+    "num_bins": 10,
+    "thresholds": {
+        "warning": 0.1,
+        "retrain_alert": 0.25
+    },
+    "psi_results": {
+        "temp_mean": {
+            "psi": 2.3369,
+            "status": "Retrain Alert"
+        },
+        "temp_std": {
+            "psi": 2.6205,
+            "status": "Retrain Alert"
+        },
+        "temp_rate": {
+            "psi": 0.0289,
+            "status": "Stable"
+        },
+        "vibration_rms": {
+            "psi": 6.8166,
+            "status": "Retrain Alert"
+        },
+        "vibration_peak": {
+            "psi": 6.7828,
+            "status": "Retrain Alert"
+        },
+        "vibration_kurtosis": {
+            "psi": 0.0116,
+            "status": "Stable"
+        }
+    },
+    "feature_statistics": {
+        "temp_mean": {
+            "baseline_mean": 35.990389,
+            "live_mean": 45.277643,
+            "baseline_std": 31.121579,
+            "live_std": 31.319338,
+            "baseline_min": 3.6675,
+            "live_min": 5.242374,
+            "baseline_max": 103.128609,
+            "live_max": 114.359644
+        },
+        "temp_std": {
+            "baseline_mean": 4.103134,
+            "live_mean": 6.189612,
+            "baseline_std": 3.501235,
+            "live_std": 3.503162,
+            "baseline_min": 0.388271,
+            "live_min": 1.686689,
+            "baseline_max": 11.704335,
+            "live_max": 13.637331
+        },
+        "temp_rate": {
+            "baseline_mean": 1.758199,
+            "live_mean": 1.816122,
+            "baseline_std": 1.250192,
+            "live_std": 1.244954,
+            "baseline_min": -0.658,
+            "live_min": -0.707301,
+            "baseline_max": 3.2328,
+            "live_max": 3.46317
+        },
+        "vibration_rms": {
+            "baseline_mean": 0.67905,
+            "live_mean": 0.984643,
+            "baseline_std": 0.339744,
+            "live_std": 0.33991,
+            "baseline_min": 0.394206,
+            "live_min": 0.608598,
+            "baseline_max": 1.221769,
+            "live_max": 1.554874
+        },
+        "vibration_peak": {
+            "baseline_mean": 0.773419,
+            "live_mean": 1.082007,
+            "baseline_std": 0.390181,
+            "live_std": 0.395091,
+            "baseline_min": 0.4348,
+            "live_min": 0.660222,
+            "baseline_max": 1.4114,
+            "live_max": 1.736357
+        },
+        "vibration_kurtosis": {
+            "baseline_mean": 4.107295,
+            "live_mean": 4.122653,
+            "baseline_std": 0.425265,
+            "live_std": 0.431049,
+            "baseline_min": 2.782008,
+            "live_min": 2.823477,
+            "baseline_max": 5.165571,
+            "live_max": 5.23129
+        }
+    }
+}

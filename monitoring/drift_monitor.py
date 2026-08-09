@@ -16,7 +16,9 @@ REF_DIST_FILE = MONITORING_DIR / "reference_dist.json"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils import load_training_dataset, FEATURE_COLUMNS
+from config import DATASET_FILE
+from utils import get_features_and_labels, load_training_dataset, FEATURE_COLUMNS
+
 
 
 def calculate_psi(expected: np.ndarray, actual: np.ndarray, num_bins: int = 10) -> float:
@@ -95,7 +97,8 @@ def run_drift_monitor():
     print("[INFO] Running Population Stability Index (PSI) Drift Monitor...")
 
     # Load baseline feature dataset
-    X_baseline, _ = load_training_dataset()
+    df_base = load_training_dataset(DATASET_FILE)
+    X_baseline, _ = get_features_and_labels(df_base)
 
     # Simulate incoming live stream with mild sensor drift
     np.random.seed(42)

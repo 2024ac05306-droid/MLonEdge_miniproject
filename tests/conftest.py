@@ -7,9 +7,20 @@ import numpy as np
 from pathlib import Path
 import tensorflow as tf
 
+import sys
+from pathlib import Path
+
+# Add project root directory to sys.path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Now import project modules
+from utils import normalize_features
+
 # Import project utilities
 from utils import normalize_features
-from build_model_variants_3 import build_base_keras_model, get_representative_dataset
+from optimisation.build_model_variants import build_base_keras_model, get_representative_dataset
 
 
 @pytest.fixture(scope="session")

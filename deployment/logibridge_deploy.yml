@@ -12,7 +12,7 @@
     mqtt_broker_ip: "127.0.0.1"
 
   tasks:
-    # Task 1: Create /opt/logibridge directory if not present
+    # Task 1: Create target directory on edge node
     - name: 1. Create target directory on edge node
       ansible.builtin.file:
         path: "{{ target_dir }}"
@@ -26,7 +26,7 @@
         dest: "{{ target_dir }}/model_ptq.tflite"
         mode: '0644'
 
-    # Task 3: Copy training statistics file (Task C2 Requirement)
+    # Task 3: Copy training statistics file
     - name: 3. Copy training statistics file
       ansible.builtin.copy:
         src: "{{ local_stats }}"
@@ -47,13 +47,13 @@
         state: stopped
       ignore_errors: true
 
-    # Task 6: Pull updated container image from local Docker registry
-    - name: 6. Pull latest container image
+    # Task 6: Ensure local image is present
+    - name: 6. Load container image
       community.docker.docker_image:
         name: "{{ image_name }}"
         source: local
 
-    # Task 7: Start inference container with environment variables and correct volume mounts
+    # Task 7: Start container with environment variables and volume mounts
     - name: 7. Start inference container with environment variables
       community.docker.docker_container:
         name: "{{ container_name }}"
@@ -68,8 +68,14 @@
         volumes:
           - "{{ target_dir }}:/opt/logibridge"
 
-    # Task 8: Wait 15 seconds and verify container health
-    - name: 8. Wait and verify container health
-      ansible.builtin.wait_for:
-        timeout: 15
-      delegate_to: localhost
+    # Task 8: Pause for container initialization
+    - name: 8. Pause for container initialization
+      ansible.builtin.pause:
+        seconds: 15
+
+    # Task 9: Verify container health status
+    - name: 9. Verify container health status
+      community.docker.docker_container_info:
+        name: "{{ container_name }}"
+      register: result
+      failed_when: not result.container.State.Running
