@@ -6,7 +6,7 @@ WORKDIR /app
 # Prevent Python from writing .pyc files and enable unbuffered logging
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    MODEL_PATH=/app/models/model_ptq.tflite
+    MODEL_PATH=/app/models/modmodel_pruned_ptq.tflite
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
