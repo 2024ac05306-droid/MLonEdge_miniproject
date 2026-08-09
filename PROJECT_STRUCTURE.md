@@ -4,29 +4,40 @@ This repository is organized to support development, training, conversion, and d
 
 Root layout (top-level files and directories you should expect):
 
-- README.md                     - Project overview and quickstart
-- requirements.txt              - Python dependencies
-- Dockerfile                    - Container recipe for building the app image
-- scripts/                      - Utility scripts (model conversion, evaluation, helpers)
-- src/                          - Source code for training, inference, and utilities
-  - src/train.py                - Training entrypoint (if applicable)
-  - src/inference.py            - Inference runtime used on desktop/edge
-  - src/utils/                  - Helper modules
-- models/                       - Checkpoints and production-ready model artifacts
-  - models/ckpt/                - Checkpoints and saved_model folders
-  - models/converted/           - Converted formats (TFLite, ONNX, TensorRT)
-- data/                         - Datasets, sample inputs, or dataset download scripts
-- notebooks/                    - Jupyter notebooks for experiments and EDA
-- edge/                         - Edge-specific code, wrappers, and configs
-  - edge/serve.py               - Lightweight server/launcher for the device (entrypoint)
-  - edge/systemd/               - Example systemd unit files to run on boot
-- tests/                        - Unit/integration tests
-- docs/                         - Additional documentation
+- .env                         - Environment variables (example/secret - not committed by default)
+- .env.example                 - Example environment variables
+- .github/                     - GitHub configuration (workflows, issue/PR templates)
+- DEPLOYMENT_STEPS.md          - Deployment instructions for ML on edge
+- Makefile                     - Build & utility tasks
+- PROJECT_STRUCTURE.md         - This project structure description
+- README.md                    - Project overview and quickstart
+- config.py                    - Runtime/config helper (project-specific)
+- environment.yml              - Conda environment specification
+- requirements.txt             - Python dependencies (pip)
+- pip                          - (project file; check contents)
+- mlflow.db                    - Local MLflow tracking DB (large file)
+- training_stats.npy           - Training statistics/artifacts
+- utils.py                     - Utility functions used across the project
 
-Guidelines and notes
+Top-level directories:
 
-- If some folders are missing, they may not be needed for the current assignment; this file documents an intended/typical structure for maintainers and graders.
-- Use models/converted/ to keep all deployment-ready model artifacts separate from training checkpoints.
-- Keep scripts idempotent and well-documented so conversion and deployment steps can be reproduced.
-- Add a small manifest (e.g., models/converted/manifest.json) alongside converted models describing format, input shape, required preprocessing/postprocessing, and runtime.
-- Prefer small, well-tested inference wrappers in src/inference.py and a lightweight device entrypoint at edge/serve.py so the runtime is easy to containerize and deploy.
+- __pycache__/                 - Python cache (auto-generated)
+- data/                        - Datasets or dataset download scripts
+- data_pipeline/               - Data preparation pipelines
+- deployment/                  - Deployment manifests, scripts, or configs
+- inference/                   - Inference-related code and helpers
+- models/                      - Checkpoints and converted/production-ready model artifacts
+- mlruns/                      - MLflow run logs
+- monitoring/                  - Monitoring/metrics collectors or configs
+- optimisation/                - Model optimisation scripts and artifacts
+- outputs/                     - Generated outputs (reports, results)
+- scenario_architecture/       - Scenario & architecture diagrams/docs
+- scripts/                     - Utility scripts (model conversion, evaluation, helpers)
+- tests/                       - Unit/integration tests
+- training/                    - Training code and configs
+
+Notes:
+- I updated only the "Root layout" section to reflect the repository's current top-level files and directories.
+- Some expected paths from a generic ML-on-edge layout (e.g., `src/`, `edge/`) are not present at the repo root; instead, this repository uses directories like `inference/`, `deployment/`, and `training/`.
+- Keep models/converted/ for production-ready artifacts and add a manifest next to converted models if helpful (e.g., models/converted/manifest.json).
+- If you'd like, I can add short descriptions inside any of the directories (list their contents) or create a manifest template — tell me which directory to document next.
