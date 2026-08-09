@@ -5,12 +5,12 @@ This document describes repeatable steps to prepare, package, and deploy a machi
 ## Overview
 - Goal: produce a deployment-ready model artifact, containerize the runtime, and run/update reliably on the device.
 - Target platforms: Linux-based edge devices (Raspberry Pi OS, Ubuntu), optional accelerators (TPU, NPU).
-- Artifacts produced: converted model (TFLite/ONNX/TensorRT), Docker image (or native binary), service configuration.
+- Artifacts produced: converted model (TFLite), Docker image (or native binary), service configuration.
 
 ## Prerequisites
 - Development machine:
   - Python >=3.8, pip
-  - Docker (for image build)
+  - Docker (for image build) - •	Base image: python:3.11-slim
   - Model conversion toolchains (TensorFlow, ONNX, tflite-runtime, torch, etc.)
 - Edge device:
   - SSH access, or serial/console access
@@ -52,18 +52,17 @@ Examples:
 Store final artifacts in `models/converted/` and include a small `manifest.json` describing format, input shape, and pre/postprocessing.
 
 ## Create a minimal runtime
-- Keep `src/inference.py` as a thin wrapper that:
-  - Loads the converted model
-  - Performs required preprocessing and postprocessing
-  - Exposes a simple API (HTTP/gRPC/REST) or a CLI for local inference
-
-Example entrypoint: `edge/serve.py` that starts a Flask/FastAPI server and loads the model from `/app/models/model.tflite`.
+ -Keep inference_service.py as a thin wrapper that:
+ - Loads the converted TensorFlow Lite model (model_ptq.tflite)  Performs required preprocessing (feature normalization and INT8 quantization scaling) and postprocessing (dequantization and class mapping)
+ - Exposes an event-driven MQTT client interface (subscribing to telemetry topics) or a CLI for local edge inference
+ -
+   Example entrypoint: inference_service.py that connects to an MQTT broker (localhost:1883), listens for incoming truck sensor telemetry, and loads the model from /app/models/model_ptq.tflite (or via the MODEL_PATH environment variable).  
 
 ## Containerize (recommended)
 - Add a Dockerfile tailored to the device architecture and requirements (ARM vs x86).
 Example Dockerfile (Raspberry Pi, TFLite):
 ```dockerfile
-FROM python:3.10-slim
+FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -140,17 +139,3 @@ Options:
   - Build/push new image -> pull on device -> docker stop/remove -> docker run new image
   - For automated updates, use orchestrator or deployment tool.
 - Provide a tested rollback tag (previous stable image) and a script to revert.
-
-## Security & hardening
-- Run containers with least privileges (non-root user inside container).
-- Secure API endpoints (API key, TLS/SSH tunnel, VPN).
-- Lock down device SSH, rotate keys, enable firewall.
-
-## Reproducibility
-- Record exact commands and tool versions used for conversion in `scripts/convert_model.sh` or `notebooks/`.
-- Store build artifacts (Dockerfile, model manifest) alongside the code.
-
-## Troubleshooting tips
-- If model fails to load, verify correct format and expected opset/runtime.
-- If slow: enable quantization, use hardware accelerators, or consider TensorRT/Edge TPU builds.
-- If out-of-memory: reduce batch size, use streaming inference, optimize model.
