@@ -22,7 +22,7 @@ jobs:
     - name: Build LogiBridge Edge Inference Image
       run: |
         docker build . \
-          --file Dockerfile \
+          --file inference/Dockerfile \
           --tag logibridge-inference:v1.0 \
           --tag logibridge-inference:latest
 
