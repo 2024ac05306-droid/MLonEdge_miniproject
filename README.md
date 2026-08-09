@@ -10,6 +10,9 @@ This Repository is created for assignment work of ML on Edge.
 |Shashank Shekhar|2024AC05773|
 |Suresh M|2024AC05271|
 
+**Demo Video link** : https://drive.google.com/drive/folders/19dGMozpOk2iO4Po7tHCpLYYPYgw-IOjo?usp=sharing
+
+
 # Goal Of the assignment
 The goal of this assignment is to design and implement an Edge AI-based cold-chain monitoring system for refrigerated trucks that can operate reliably without continuous internet connectivity. The system aims to monitor temperature, vibration, and door events in real time, classify the operational state of the cargo, and generate immediate alerts for anomalies. It also demonstrates end-to-end Edge AI deployment through model optimization, Docker containerization, MQTT communication, and MLOps-based monitoring for scalable fleet management.
 
