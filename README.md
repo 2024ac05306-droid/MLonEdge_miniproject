@@ -26,11 +26,9 @@ This tool stack aligns with the assignment components, including Edge AI model d
 |Pandas and numpy |Data Processing and Feature Enginerring|
 |Matplotlib |Exploratory Data Analysis (EDA) and result visualization|
 |MLflow| Model registry and log and Experiment tracking|
-|DVC|Data version control|
 |Docker Hub |Containarization and Deployment|
 |MQTT, Mosquitto Broker |Sensor data transmission and inference messaging|
 |Ansible |Automated model deployment and OTA updates|
-|FastAPI: API Framework |REST API for model inference|
 |Pytest |Unit and integration testing|
 
 
