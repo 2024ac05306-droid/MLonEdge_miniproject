@@ -1,41 +1,32 @@
 # Project Structure
 
-This repository is organized to support development, training, conversion, and deployment of ML models on edge devices.
+This repository is organized to support development, training, conversion, and deployment of machine learning models on edge devices.
 
 Root layout (top-level files and directories you should expect):
 
-# LogiBridge Edge ML Deployment — Project Structure & Repository Blueprint
+- README.md                     - Project overview and quickstart
+- requirements.txt              - Python dependencies
+- Dockerfile                    - Container recipe for building the app image
+- scripts/                      - Utility scripts (model conversion, evaluation, helpers)
+- src/                          - Source code for training, inference, and utilities
+  - src/train.py                - Training entrypoint (if applicable)
+  - src/inference.py            - Inference runtime used on desktop/edge
+  - src/utils/                  - Helper modules
+- models/                       - Checkpoints and production-ready model artifacts
+  - models/ckpt/                - Checkpoints and saved_model folders
+  - models/converted/           - Converted formats (TFLite, ONNX, TensorRT)
+- data/                         - Datasets, sample inputs, or dataset download scripts
+- notebooks/                    - Jupyter notebooks for experiments and EDA
+- edge/                         - Edge-specific code, wrappers, and configs
+  - edge/serve.py               - Lightweight server/launcher for the device (entrypoint)
+  - edge/systemd/               - Example systemd unit files to run on boot
+- tests/                        - Unit/integration tests
+- docs/                         - Additional documentation
 
-This repository implements an end-to-end Machine Learning on Edge (MLOnEdge) deployment, monitoring, and orchestration pipeline for vehicle sensor telemetry classification.
+Guidelines and notes
 
-
-## 📂 Root Directory Overview
-
-```text
-MLOnEdge/
-├── .github/
-│   └── workflows/
-│       ├── docker-image.yml          # GitHub Actions CI/CD for local Docker builds & smoke tests
-│       └── docker-publish.yml        # CI/CD pipeline for building, pushing, & signing images to GHCR
-├── ansible/
-│   ├── deploy_edge_model.yml         # Primary Ansible playbook for automated edge deployment & health checks
-│   └── test_ansible_idempotency.py   # Verification script for Ansible playbooks and idempotency testing
-├── data/
-│   └── training_stats.npy            # Saved feature mean & standard deviation normalization parameters
-├── inference/
-│   ├── hardware_accelerator.py       # Micro-NPU (Ethos-U55) compiler interface and DMA async pipeline simulator
-│   └── inference_service.py          # Thin edge inference runtime with MQTT event subscriber & INT8 processing
-├── models/
-│   ├── model_base.keras              # Baseline float32 Keras model artifact
-│   └── model_ptq.tflite              # Post-Training Quantized (INT8) TensorFlow Lite model binary
-├── monitoring/
-│   └── reference_dist.json           # Baseline feature probability distributions for drift/OOD monitoring
-├── optimisation/
-│   └── build_model_variants.py       # Model architecture definition & TFLite PTQ calibration dataset generator
-├── tests/
-│   ├── conftest.py                   # Pytest session-wide shared fixtures and synthetic datasets
-│   └── test_pipeline.py              # Unit & integration tests (normalization, quantization, & +3sigma OOD shifts)
-├── Dockerfile                        # Multi-stage Docker build configuration for edge inference container
-├── PROJECT_STRUCTURE.md             # Repository layout and architecture documentation (this file)
-├── requirements.txt                  # Python dependencies (TensorFlow, Pytest, Paho-MQTT, MLflow, etc.)
-└── utils.py                          # Utility functions for feature standardization and statistics loading
+- If some folders are missing, they may not be needed for the current assignment; this file documents an intended/typical structure for maintainers and graders.
+- Use models/converted/ to keep all deployment-ready model artifacts separate from training checkpoints.
+- Keep scripts idempotent and well-documented so conversion and deployment steps can be reproduced.
+- Add a small manifest (e.g., models/converted/manifest.json) alongside converted models describing format, input shape, required preprocessing/postprocessing, and runtime.
+- Prefer small, well-tested inference wrappers in src/inference.py and a lightweight device entrypoint at edge/serve.py so the runtime is easy to containerize and deploy.
