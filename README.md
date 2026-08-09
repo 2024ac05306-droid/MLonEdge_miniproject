@@ -77,13 +77,25 @@ This tool stack aligns with the assignment components, including Edge AI model d
                          │
                          ▼
                train_model.py
+               data/training_stats.npy
                          │
      Train → Validate → Save Model
                          │
                          ▼
-        outputs/model.pkl (or .joblib)
+        models/best_model.keras
+        models/best_model_pruned.keras
                          │
                          ▼
-             inference.py
+           inference_service.py (directly loads model_ptq.tflite via tflite_runtime.interpreter.Interpreter)
                          │
+                         ▼
+            models/model_ptq.tflite
+                         │
+                         ▼
+            inference/inference_service.py
+                         │
+                         ▼
+            deployment/logibridge_deploy.yml
+                         │
+                         ▼
      Normalize → Predict → Alarm
