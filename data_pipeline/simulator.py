@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
-import requests 
+#import requests 
 import mlflow
 import mlflow.sklearn
 import mlflow.pyfunc
@@ -40,10 +40,13 @@ MLFLOW_EXPERIMENT_NAME = os.getenv(
 # --------------------------------------------------
 # MQTT Topics
 # --------------------------------------------------
+
+TRUCK_ID = "truck01"
+
 TOPICS = {
-    "temperature": "coldchain/truck/temperature",
-    "vibration": "coldchain/truck/vibration_rms",
-    "door": "coldchain/truck/door_event",
+    "temperature": f"logibridge/trucks/{TRUCK_ID}/temperature",
+    "vibration": f"logibridge/trucks/{TRUCK_ID}/vibration_rms",
+    "door": f"logibridge/trucks/{TRUCK_ID}/door_event",
 }
 
 # --------------------------------------------------
@@ -130,6 +133,7 @@ def run_simulation(anomaly_mode: str, duration_sec: int = 300):
 
             temp_payload = {
                 "timestamp": timestamp,
+                "truck_id": TRUCK_ID,
                 "sensor": "temperature",
                 "value_c": temperature,
                 "setpoint_c": 4.0,
@@ -153,6 +157,7 @@ def run_simulation(anomaly_mode: str, duration_sec: int = 300):
 
                 vib_payload = {
                     "timestamp": timestamp,
+                    "truck_id": TRUCK_ID,
                     "sensor": "vibration_rms",
                     "value_g": vibration,
                     "anomaly_mode": anomaly_mode,
@@ -174,6 +179,7 @@ def run_simulation(anomaly_mode: str, duration_sec: int = 300):
 
                 door_payload = {
                     "timestamp": timestamp,
+                    "truck_id": TRUCK_ID,
                     "sensor": "door_event",
                     "event": event,
                     "anomaly_mode": anomaly_mode,

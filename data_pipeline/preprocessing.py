@@ -22,6 +22,7 @@ Feature vector:
 import json
 import os
 import sys
+import time
 from collections import deque
 from pathlib import Path
 
@@ -71,9 +72,12 @@ print(f"MLflow Experiment: {MLFLOW_EXPERIMENT_NAME}")
 # MQTT Topics
 # -----------------------------------------------------
 
-TEMPERATURE_TOPIC = "coldchain/truck/temperature"
-VIBRATION_TOPIC = "coldchain/truck/vibration_rms"
-DOOR_EVENT_TOPIC = "coldchain/truck/door_event"
+TRUCK_ID = "truck01"  # fixed for now — single-truck assumption, not yet CLI-parameterized
+
+TEMPERATURE_TOPIC = f"logibridge/trucks/{TRUCK_ID}/temperature"
+VIBRATION_TOPIC = f"logibridge/trucks/{TRUCK_ID}/vibration_rms"
+DOOR_EVENT_TOPIC = f"logibridge/trucks/{TRUCK_ID}/door_event"
+TELEMETRY_TOPIC = f"logibridge/trucks/{TRUCK_ID}/telemetry"
 
 
 # -----------------------------------------------------
@@ -239,12 +243,84 @@ def create_features(input_file, output_file):
 
 
 # -----------------------------------------------------
+# Live MQTT Bridge  (NEW — previously missing)
+# -----------------------------------------------------
+# inference_service.py subscribes to "logibridge/trucks/+/telemetry" and
+# expects a pre-computed 6-value feature vector: {"truck_id": ..., "features": [...]}.
+# Nothing in the codebase published to that topic before this fix — this
+# function is the missing bridge: raw sensor readings in, features out.
+
+
+def run_live_bridge():
+    """Subscribes to raw sensor topics, buffers a 30s/10s sliding window per
+    sensor, computes the 6-value feature vector on each step, normalises it
+    using the frozen training_stats.npy (never recomputed live), and
+    publishes {"truck_id", "features"} to TELEMETRY_TOPIC for
+    inference_service.py to consume."""
+    from normalization import normalize_features  # local import: avoids a
+    # hard dependency for callers who only use the offline batch functions above
+
+    temp_buffer = deque()  # (timestamp, value)
+    vib_buffer = deque()
+    last_publish = [0.0]
+
+    def on_connect(client, userdata, flags, reason_code, properties=None):
+        print(f"[BRIDGE] Connected (rc={reason_code}). Subscribing to raw sensor topics.")
+        client.subscribe(TEMPERATURE_TOPIC, qos=1)
+        client.subscribe(VIBRATION_TOPIC, qos=1)
+
+    def on_message(client, userdata, msg):
+        payload = json.loads(msg.payload.decode("utf-8"))
+        now = time.time()
+
+        if msg.topic == TEMPERATURE_TOPIC:
+            temp_buffer.append((now, payload["value_c"]))
+        elif msg.topic == VIBRATION_TOPIC:
+            vib_buffer.append((now, payload["value_g"]))
+
+        cutoff = now - WINDOW_SECONDS
+        while temp_buffer and temp_buffer[0][0] < cutoff:
+            temp_buffer.popleft()
+        while vib_buffer and vib_buffer[0][0] < cutoff:
+            vib_buffer.popleft()
+
+        if now - last_publish[0] >= STEP_SECONDS and len(temp_buffer) >= 5:
+            last_publish[0] = now
+            temp_window = np.array([v for _, v in temp_buffer])
+            vib_window = np.array([v for _, v in vib_buffer]) if vib_buffer else np.array([0.45])
+
+            raw_features = extract_features(temp_window, vib_window)
+            norm_features = normalize_features(raw_features)
+
+            result = {"truck_id": TRUCK_ID, "features": norm_features.tolist()}
+            client.publish(TELEMETRY_TOPIC, json.dumps(result), qos=1)
+            print(f"[BRIDGE] Published feature vector -> {TELEMETRY_TOPIC}")
+
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"bridge-{TRUCK_ID}")
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.connect(BROKER, PORT, 60)
+
+    print(f"[BRIDGE] Live preprocessing bridge started | truck={TRUCK_ID} | "
+          f"broker={BROKER}:{PORT}")
+    print("Press Ctrl+C to stop")
+    client.loop_forever()
+
+
+# -----------------------------------------------------
 # Main Execution
 # -----------------------------------------------------
 
 if __name__ == "__main__":
-
-    print("\nExtracting features across all operational modes...")
+    if "--live" in sys.argv:
+        # Live mode: bridges raw MQTT sensor data to the telemetry topic
+        # inference_service.py needs. Run this alongside simulator.py and
+        # inference_service.py for the pipeline to work end-to-end.
+        run_live_bridge()
+    else:
+        # Default: existing offline batch feature extraction from saved
+        # simulator CSV logs, used to build the training dataset.
+        print("\nExtracting features across all operational modes...")
 
     # 1. Class 0: Normal
     create_features(

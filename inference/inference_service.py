@@ -27,7 +27,7 @@ except ImportError:
         return (X - mean) / (std + 1e-8)
 
 # Load environment variable with default fallback
-MODEL_PATH = os.getenv("MODEL_PATH", "/app/models/model_ptq.tflite")
+MODEL_PATH = os.getenv("MODEL_PATH", "../models/model_ptq.tflite")
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
 

@@ -52,7 +52,7 @@ mlflow.set_experiment(
 # Paths
 # =====================================================
 
-DATA_DIR = Path("data")
+DATA_DIR = Path("..\data")
 
 
 NORMAL_FEATURE_FILE = (
